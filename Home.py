@@ -37,20 +37,25 @@ with col1:
         selected_sheet = st.selectbox("Select a worksheet", sheet_names)
 
         if st.button("Load from Google Sheet"):
-            # --- THIS IS THE FIX ---
-            # Now calling the new function that understands the pivoted data format.
-            raw_df = utils.load_and_process_google_sheet(selected_sheet)
-            
-            if raw_df is not None:
-                st.cache_data.clear()
-                st.cache_resource.clear()
+            # ADDED: Spinner provides visual feedback that the app is working.
+            with st.spinner(f"Loading and processing '{selected_sheet}'..."):
+                # Call the function to get the data
+                raw_df = utils.load_and_process_google_sheet(selected_sheet)
                 
-                utils.initialize_app(raw_df, f"Google Sheet: {selected_sheet}")
-                st.rerun()
-            else:
-                st.error("Failed to load and process data from the selected sheet.")
+                # MODIFIED: A more robust check for a valid, non-empty DataFrame.
+                if raw_df is not None and not raw_df.empty:
+                    st.success("✅ Data loaded successfully!")
+                    
+                    st.cache_data.clear()
+                    st.cache_resource.clear()
+                    
+                    utils.initialize_app(raw_df, f"Google Sheet: {selected_sheet}")
+                    st.rerun()
+                else:
+                    # This error message is now guaranteed to show if loading fails.
+                    st.error("❌ Failed to process data from the selected sheet. This might be due to a connection issue or an unexpected data format.")
     else:
-        st.warning("Could not retrieve worksheet names. Check Google Sheets connection.")
+        st.warning("Could not retrieve worksheet names. Check Google Sheets connection and secrets configuration.")
 
 # --- Option 2: CSV Upload ---
 with col2:
@@ -60,15 +65,18 @@ with col2:
     uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
     if uploaded_file is not None:
-        # --- THIS IS THE FIX ---
-        # Now calling the new function for processing the custom CSV format.
-        raw_df = utils.load_and_process_custom_csv(uploaded_file)
-        
-        if raw_df is not None:
-            st.cache_data.clear()
-            st.cache_resource.clear()
+        # Using a spinner here as well for consistency
+        with st.spinner("Processing CSV file..."):
+            raw_df = utils.load_and_process_custom_csv(uploaded_file)
+            
+            if raw_df is not None and not raw_df.empty:
+                st.success("✅ CSV processed successfully!")
 
-            utils.initialize_app(raw_df, f"Uploaded File: {uploaded_file.name}")
-            st.rerun()
-        else:
-            st.error("Failed to load and process the uploaded CSV file.")
+                st.cache_data.clear()
+                st.cache_resource.clear()
+
+                utils.initialize_app(raw_df, f"Uploaded File: {uploaded_file.name}")
+                st.rerun()
+            else:
+                st.error("❌ Failed to process the uploaded CSV file.")
+
