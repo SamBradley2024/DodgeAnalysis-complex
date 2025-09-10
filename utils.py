@@ -83,12 +83,21 @@ def _process_single_dataframe(df, game_id, team_name_source):
         'Times Thrown At (overall)': 'Thrown_At_Overall'
     }
     df = df.rename(columns=rename_map)
-    
+
+    # --- FIX: Robustly convert all relevant columns to numeric types here ---
+    for col in df.columns:
+        if col != 'Player_ID': # Don't convert the player name column
+            # Handle non-numeric strings before conversion
+            if df[col].dtype == 'object':
+                df[col] = df[col].astype(str).str.replace('%', '', regex=False)
+                df[col] = df[col].astype(str).str.replace('#DIV/0!', '0', regex=False)
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
     team_name = team_name_source.split(' vs ')[0]
     df['Team'] = team_name
-    df['Match_ID'] = 'M1' # Assume all loaded games are from the same match for now
-    df['Game_ID'] = game_id # Use the sheet/file name as the unique Game ID
-    df['Game_Outcome'] = 'Win' # Default value
+    df['Match_ID'] = 'M1'
+    df['Game_ID'] = game_id
+    df['Game_Outcome'] = 'Win'
     
     return df
 
@@ -150,7 +159,7 @@ def load_and_process_multiple_csvs(uploaded_files):
             
     return pd.concat(all_game_dfs, ignore_index=True) if all_game_dfs else None
 
-# --- Data Enhancement & Model Training (No changes here, but now operates on multi-game data) ---
+# --- Data Enhancement & Model Training ---
 def enhance_dataframe(df):
     """Takes a raw dataframe and adds all calculated metrics and features."""
     required_cols = ['Player_ID', 'Team', 'Game_ID', 'Hits', 'Throws', 'Times_Eliminated']
@@ -159,9 +168,7 @@ def enhance_dataframe(df):
         st.error(f"Data enhancement failed. The data is missing required columns: {', '.join(missing)}")
         return None
 
-    numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    # --- FIX: Removed the redundant and less reliable numeric conversion from here ---
 
     df['K/D_Ratio'] = df['Hits'] / df['Times_Eliminated'].replace(0, 1)
     df['Net_Impact'] = (df.get('Hits', 0) + df.get('Catches', 0)) - df.get('Times_Eliminated', 0)
@@ -193,10 +200,8 @@ def train_advanced_models(df):
     
     player_avg_stats['Role_Cluster'] = kmeans.fit_predict(scaled_features)
     
-    # Map roles back to the original dataframe
     df_copy = df_copy.join(player_avg_stats['Role_Cluster'], on='Player_ID')
 
-    # ... (rest of the role naming logic can be complex, simplifying for now)
     role_mapping = {0: 'Offensive Heavy', 1: 'Defensive Wall', 2: 'All-Rounder', 3: 'Evasive Specialist'}
     df_copy['Player_Role'] = df_copy['Role_Cluster'].map(role_mapping).fillna('Generalist')
     
@@ -224,7 +229,7 @@ def generate_advanced_coaching_report(df, player_id):
     player_games = df[df['Player_ID'] == player_id]
     if player_games.empty: return [], [], None, None
     player_stats = player_games.mean(numeric_only=True)
-    player_stats.name = player_games.index[0] # for .loc access later
+    player_stats.name = player_games.index[0]
 
     stats_to_analyze = [
         'Overall_Performance', 'K/D_Ratio', 'Hits', 'Throws', 'Catches', 'Dodges', 
@@ -232,7 +237,6 @@ def generate_advanced_coaching_report(df, player_id):
     ]
     existing_stats = [s for s in stats_to_analyze if s in df.columns and pd.api.types.is_numeric_dtype(df[s])]
 
-    # --- 1. Percentile Analysis vs. League (based on player averages) ---
     player_averages = df.groupby('Player_ID')[existing_stats].mean()
     player_percentiles = player_averages.rank(pct=True).loc[player_id]
     
@@ -251,13 +255,11 @@ def generate_advanced_coaching_report(df, player_id):
     if not strengths_report: strengths_report.append("No significant strengths identified.")
     if not weaknesses_report: weaknesses_report.append("No significant weaknesses identified.")
 
-    # --- 2. Chart vs. League Average (Percentiles) ---
     fig_league = go.Figure()
     fig_league.add_trace(go.Scatterpolar(r=player_percentiles.values * 100, theta=player_percentiles.index.str.replace('_', ' '), fill='toself', name=f'{player_id} Percentile'))
     fig_league.add_trace(go.Scatterpolar(r=[50] * len(player_percentiles), theta=player_percentiles.index.str.replace('_', ' '), mode='lines', name='League Average (50th)', line=dict(dash='dash')))
     fig_league.update_layout(height=500, polar=dict(radialaxis=dict(visible=True, range=[0, 100])))
 
-    # --- 3. Comparison vs. Role Average (Raw Stats) ---
     fig_role = None
     player_role = player_games['Player_Role'].iloc[0] if 'Player_Role' in player_games.columns else 'N/A'
     
@@ -273,8 +275,6 @@ def generate_advanced_coaching_report(df, player_id):
             fig_role.update_layout(barmode='group', title_text=f'<b>Player Average Stats vs. Average "{player_role}"</b>', height=500)
 
     return strengths_report, weaknesses_report, fig_league, fig_role
-
-
 
 def create_game_level_features(df):
     """Transforms player-level data into game-level data for win prediction."""
