@@ -94,42 +94,50 @@ def get_worksheet_names():
 def load_and_process_google_sheet(worksheet_name):
     """
     Loads and processes a worksheet from Google Sheets with the new, pivoted format.
+    This is a more robust version that builds the DataFrame directly.
     """
     try:
         client = get_gspread_client()
-        spreadsheet = client.open("Dodgeball App Data")
-        worksheet = spreadsheet.worksheet(worksheet_name)
+        worksheet = client.open("Dodgeball App Data").worksheet(worksheet_name)
         
-        # Get all values, which gives a list of lists
+        # Get all values as a list of lists
         data = worksheet.get_all_values()
         
-        # Convert to a DataFrame, using the first row as the header
-        df = pd.DataFrame(data[1:], columns=data[0])
+        if not data or len(data) < 2:
+            st.error(f"Worksheet '{worksheet_name}' is empty or has no data rows.")
+            return None
+
+        # The first row contains headers (team info and player names)
+        header_row = data[0]
+        player_names = header_row[1:]
         
-        # Set the first column (metrics) as the index and then transpose
-        df = df.set_index(df.columns[0]).T
+        # Subsequent rows contain the metrics and values
+        metric_rows = data[1:]
         
-        # Reset index to turn players from an index into a 'Player_ID' column
-        df = df.reset_index().rename(columns={'index': 'Player_ID'})
+        # Build a dictionary to construct the DataFrame
+        # This is a more stable method than transposing
+        processed_data = {'Player_ID': player_names}
+        for row in metric_rows:
+            metric_name = row[0]
+            metric_values = row[1:]
+            # Ensure each metric has a value for each player
+            if len(metric_values) == len(player_names):
+                processed_data[metric_name] = metric_values
         
+        df = pd.DataFrame(processed_data)
+
         # --- (The rest of the logic remains the same) ---
-        team_name = worksheet.cell(1, 1).value.split(' vs ')[0]
+        team_name = header_row[0].split(' vs ')[0]
         df['Team'] = team_name
         df['Match_ID'] = 'M1'
         df['Game_ID'] = 'G1'
         df['Game_Outcome'] = 'Win'  # Default value
 
-        # Rename columns to match the existing structure
         df = df.rename(columns={
-            'Overall Hits': 'Hits',
-            'Overall Throws': 'Throws',
-            'Catches made': 'Catches',
-            'Overall Outs': 'Times_Eliminated',
-            'Out (caught)': 'Caught_Out',
-            'Out (overall hits)': 'Hit_Out'
+            'Overall Hits': 'Hits', 'Overall Throws': 'Throws', 'Catches made': 'Catches',
+            'Overall Outs': 'Times_Eliminated', 'Out (caught)': 'Caught_Out', 'Out (overall hits)': 'Hit_Out'
         })
         
-        # Add missing columns with default values
         df['Dodges'] = 0
         df['Blocks'] = 0
         
@@ -141,38 +149,45 @@ def load_and_process_google_sheet(worksheet_name):
 def load_and_process_custom_csv(uploaded_file):
     """
     Loads and processes a custom-formatted CSV file into a tidy DataFrame.
-    This version is more robust and avoids the 'setting an array element' error.
+    This version is more robust and mirrors the Google Sheet logic.
     """
     try:
-        # Read the CSV, setting the first row as the header and first column as the index
-        df = pd.read_csv(uploaded_file, header=0, index_col=0)
+        # Read the raw data without assuming a header or index
+        df_raw = pd.read_csv(uploaded_file, header=None)
+        
+        if df_raw.empty or len(df_raw) < 2:
+            st.error("The uploaded CSV file is empty or has no data rows.")
+            return None
 
-        # Extract the team name from the first column's header
-        team_name = df.columns[0].split(' vs ')[0]
+        # The first row contains headers (team info and player names)
+        header_row = df_raw.iloc[0].tolist()
+        player_names = header_row[1:]
         
-        # Transpose the DataFrame so players become rows
-        df = df.T
+        # Subsequent rows contain the metrics and values
+        metric_rows = df_raw.iloc[1:].values.tolist()
+
+        # Build a dictionary to construct the DataFrame
+        processed_data = {'Player_ID': player_names}
+        for row in metric_rows:
+            metric_name = row[0]
+            metric_values = row[1:]
+            if len(metric_values) == len(player_names):
+                processed_data[metric_name] = metric_values
         
-        # Reset index to turn players from an index into a 'Player_ID' column
-        df = df.reset_index().rename(columns={'index': 'Player_ID'})
-        
+        df = pd.DataFrame(processed_data)
+
         # --- (The rest of the logic is the same as the Google Sheet function) ---
+        team_name = header_row[0].split(' vs ')[0]
         df['Team'] = team_name
         df['Match_ID'] = 'M1'
         df['Game_ID'] = 'G1'
         df['Game_Outcome'] = 'Win'  # Default value
 
-        # Rename columns to match the existing structure
         df = df.rename(columns={
-            'Overall Hits': 'Hits',
-            'Overall Throws': 'Throws',
-            'Catches made': 'Catches',
-            'Overall Outs': 'Times_Eliminated',
-            'Out (caught)': 'Caught_Out',
-            'Out (overall hits)': 'Hit_Out'
+            'Overall Hits': 'Hits', 'Overall Throws': 'Throws', 'Catches made': 'Catches',
+            'Overall Outs': 'Times_Eliminated', 'Out (caught)': 'Caught_Out', 'Out (overall hits)': 'Hit_Out'
         })
         
-        # Add missing columns with default values
         df['Dodges'] = 0
         df['Blocks'] = 0
         
@@ -180,6 +195,7 @@ def load_and_process_custom_csv(uploaded_file):
     except Exception as e:
         st.error(f"Error processing the CSV file: {e}")
         return None
+
 
 def enhance_dataframe(df):
     """Takes a raw dataframe and adds all calculated metrics and features."""
