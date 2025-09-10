@@ -37,25 +37,24 @@ with col1:
         selected_sheet = st.selectbox("Select a worksheet", sheet_names)
 
         if st.button("Load from Google Sheet"):
-            # ADDED: Spinner provides visual feedback that the app is working.
-            with st.spinner(f"Loading and processing '{selected_sheet}'..."):
-                # Call the function to get the data
+            # CORRECTED LOGIC: Clear cache first to ensure a clean slate.
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            
+            with st.spinner(f"Loading '{selected_sheet}' and preparing analysis..."):
+                # Load the raw data from the selected sheet.
                 raw_df = utils.load_and_process_google_sheet(selected_sheet)
                 
-                # MODIFIED: A more robust check for a valid, non-empty DataFrame.
+                # If loading is successful, initialize the application.
                 if raw_df is not None and not raw_df.empty:
-                    st.success("✅ Data loaded successfully!")
-                    
-                    st.cache_data.clear()
-                    st.cache_resource.clear()
-                    
+                    # This function will process the data and store it in session_state.
                     utils.initialize_app(raw_df, f"Google Sheet: {selected_sheet}")
+                    # Rerun the page. The check at the top will now show the success message.
                     st.rerun()
                 else:
-                    # This error message is now guaranteed to show if loading fails.
-                    st.error("❌ Failed to process data from the selected sheet. This might be due to a connection issue or an unexpected data format.")
+                    st.error("❌ Failed to load or process data from the selected sheet.")
     else:
-        st.warning("Could not retrieve worksheet names. Check Google Sheets connection and secrets configuration.")
+        st.warning("Could not retrieve worksheet names. Check Google Sheets connection.")
 
 # --- Option 2: CSV Upload ---
 with col2:
@@ -65,17 +64,18 @@ with col2:
     uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
     if uploaded_file is not None:
-        # Using a spinner here as well for consistency
-        with st.spinner("Processing CSV file..."):
+        # CORRECTED LOGIC: Clear cache first to ensure a clean slate.
+        st.cache_data.clear()
+        st.cache_resource.clear()
+
+        with st.spinner("Processing CSV file and preparing analysis..."):
+            # Load the raw data from the uploaded file.
             raw_df = utils.load_and_process_custom_csv(uploaded_file)
             
+            # If loading is successful, initialize the application.
             if raw_df is not None and not raw_df.empty:
-                st.success("✅ CSV processed successfully!")
-
-                st.cache_data.clear()
-                st.cache_resource.clear()
-
                 utils.initialize_app(raw_df, f"Uploaded File: {uploaded_file.name}")
+                # Rerun the page to reflect the new state.
                 st.rerun()
             else:
                 st.error("❌ Failed to process the uploaded CSV file.")
