@@ -29,13 +29,24 @@ if not player_list:
 selected_player = st.selectbox("Select Player", player_list)
 
 if selected_player:
+    # --- Data Cleaning and Conversion ---
+    # This block is now more robust to handle errors from the source data.
+    # We clean the entire DataFrame once to ensure data is correct for any selected player.
+    
+    # First, ensure all potentially numeric columns are the correct type.
+    cols_to_convert = [col for col in df.columns if col not in ['Player_ID', 'Team', 'Match_ID', 'Game_ID', 'Game_Outcome']]
+    for col in cols_to_convert:
+        if df[col].dtype == 'object':
+            # For percentages, first handle #DIV/0! and remove '%'
+            if '%' in str(df[col].iloc[0]):
+                df[col] = df[col].str.replace('#DIV/0!', '0', regex=False)
+                df[col] = pd.to_numeric(df[col].str.replace('%', '', regex=False), errors='coerce').fillna(0) / 100.0
+            else:
+                # For other object columns that should be numeric
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
     player_data = df[df['Player_ID'] == selected_player].iloc[0]
 
-    # --- Data Cleaning and Conversion ---
-    # Convert percentage strings (e.g., "50.00%") to floats for calculations
-    for col in df.columns:
-        if 'Survivability' in col and df[col].dtype == 'object':
-            df[col] = df[col].str.replace('%', '').astype(float) / 100.0
 
     # --- Analysis Section ---
     tab1, tab2, tab3 = st.tabs(["Offensive Breakdown", "Defensive Breakdown", "Elimination Profile"])
@@ -120,3 +131,4 @@ if selected_player:
             st.plotly_chart(fig_elim, use_container_width=True)
         else:
             st.info("This player was not eliminated in the selected dataset.")
+
