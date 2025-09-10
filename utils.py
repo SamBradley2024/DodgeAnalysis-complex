@@ -676,12 +676,12 @@ def generate_insights(df, models):
     """Generate more advanced, AI-powered insights from the data."""
     insights = []
 
-    # Insight 1: Top Performer (Unbolded)
+    # Insight 1: Top Performer
     top_performer = df.groupby('Player_ID')['Overall_Performance'].mean().idxmax()
     top_score = df.groupby('Player_ID')['Overall_Performance'].mean().max()
     insights.append(f"🏆 Top Performer: {top_performer} leads the league with an average performance score of {top_score:.2f}.")
 
-    # Insight 2: Key to Success (Unbolded)
+    # Insight 2: Key to Success
     corr_cols = [
         'Hits', 'Throws', 'Catches', 'Dodges', 'Blocks', 'Hit_Accuracy', 
         'K/D_Ratio', 'Net_Impact', 'Defensive_Efficiency', 
@@ -689,51 +689,41 @@ def generate_insights(df, models):
     ]
     existing_corr_cols = [col for col in corr_cols if col in df.columns]
     if 'Overall_Performance' in existing_corr_cols:
-        performance_corr = df[existing_corr_cols].corr()['Overall_Performance'].abs().sort_values(ascending=False)
+        performance_corr = df[existing_corr_cols].corr(numeric_only=True)['Overall_Performance'].abs().sort_values(ascending=False)
         if len(performance_corr) > 1:
             top_corr_skill = performance_corr.index[1]
             insights.append(f"📈 Key to Success: In this dataset, {top_corr_skill.replace('_', ' ')} has the strongest correlation with a player's Overall Performance score.")
 
-    # --- UPDATED: Insight 3 now analyzes statistical gaps for ALL teams ---
-    team_summary = df.groupby('Team').agg(
-        Avg_Performance=('Avg_Performance', 'first')
-    ).dropna()
+    # --- CORRECTED: Insight 3 now correctly calculates team averages ---
+    stats_to_check = ['Hit_Accuracy', 'K/D_Ratio', 'Dodges', 'Catches']
+    
+    league_avg = df[stats_to_check].mean()
+    team_averages = df.groupby('Team')[stats_to_check].mean()
 
-    if not team_summary.empty and len(team_summary) > 1:
-        stats_to_check = ['Avg_Hit_Accuracy', 'Avg_KD_Ratio', 'Avg_Dodges', 'Avg_Catches']
-        existing_stats = [stat for stat in stats_to_check if stat in df.columns]
-        
-        if existing_stats:
-            league_avg = df[existing_stats].mean()
-
-            # Loop through every team to find their biggest weakness
-            for team_name in team_summary.index:
-                team_stats = df[df['Team'] == team_name][existing_stats].mean()
-                comparison = (team_stats - league_avg) / league_avg
+    if not team_averages.empty and len(team_averages) > 1:
+        for team_name, team_stats in team_averages.iterrows():
+            comparison = (team_stats - league_avg) / league_avg
+            
+            if not comparison.empty:
+                weakest_stat = comparison.idxmin()
+                weakness_value = comparison.min()
                 
-                if not comparison.empty:
-                    weakest_stat = comparison.idxmin()
-                    weakness_value = comparison.min()
-                    
-                    # Only report the insight if the weakness is significant (e.g., >15% below average)
-                    if weakness_value < -0.15:
-                        weakness_stat_clean = weakest_stat.replace('Avg_', '').replace('_', ' ')
-                        insights.append(f"💡 Coaching Focus for {team_name}: Their biggest statistical weakness is in {weakness_stat_clean}, which is {abs(weakness_value):.0%} below the league average.")
+                if weakness_value < -0.15: # Only report significant weaknesses
+                    weakness_stat_clean = weakest_stat.replace('_', ' ').title()
+                    insights.append(f"💡 Coaching Focus for {team_name}: Their biggest statistical weakness is in **{weakness_stat_clean}**, which is {abs(weakness_value):.0%} below the league average.")
 
-    # UPDATED: Insight 4 now analyzes stamina
+    # Insight 4: Stamina Analysis
     if 'Stamina_Trend' in df.columns:
         stamina_data = df.groupby('Player_ID')['Stamina_Trend'].first().dropna()
         if not stamina_data.empty:
-            # Find player who fades the most (most negative correlation)
             worst_stamina_player = stamina_data.idxmin()
             worst_stamina_score = stamina_data.min()
             if worst_stamina_score < -0.3:
                 insights.append(f"🏃 Stamina Watch: {worst_stamina_player} shows a tendency to fade, as their performance drops significantly in later games within a match.")
 
-            # Find player who gets stronger (most positive correlation)
             best_stamina_player = stamina_data.idxmax()
             best_stamina_score = stamina_data.max()
             if best_stamina_score > 0.3:
                 insights.append(f"⚡ Strong Finisher: {best_stamina_player} is a clutch player who consistently improves their performance as a match progresses.")
-            
+
     return insights
