@@ -4,7 +4,7 @@ import plotly.express as px
 import utils
 
 # --- Page Configuration and State Check ---
-st.set_page_config(page_title="Match Analysis", page_icon="⚔️", layout="wide")
+st.set_page_config(page_title="Game Analysis", page_icon="🎲", layout="wide")
 st.markdown(utils.load_css(), unsafe_allow_html=True)
 
 if 'data_loaded' not in st.session_state or not st.session_state.data_loaded:
@@ -13,71 +13,57 @@ if 'data_loaded' not in st.session_state or not st.session_state.data_loaded:
 
 df = st.session_state.df_enhanced
 
-# --- Data Cleaning ---
-for col in df.columns:
-    if df[col].dtype == 'object' and col not in ['Player_ID', 'Team', 'Match_ID', 'Game_ID', 'Game_Outcome', 'Player_Role']:
-        if '%' in str(df[col].iloc[0]):
-            df[col] = df[col].str.replace('#DIV/0!', '0', regex=False)
-            df[col] = pd.to_numeric(df[col].str.replace('%', '', regex=False), errors='coerce').fillna(0) / 100.0
-        else:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-# --- Page Content ---
-st.header("⚔️ Match Analysis")
-st.info(f"Analyzing detailed match data from: **{st.session_state.source_name}**")
-
-match_list = sorted(df['Match_ID'].unique())
-if not match_list:
-    st.warning("No matches found in the selected data source.")
+# --- Game Selection ---
+st.header("🎲 Single Game Analysis")
+game_list = sorted(df['Game_ID'].unique())
+if not game_list:
+    st.warning("No games found in the selected data source.")
     st.stop()
 
-selected_match = st.selectbox("Select a Match to Analyze", match_list)
+selected_game = st.selectbox("Select a Game to Analyze", game_list)
 
-if selected_match:
-    match_df = df[df['Match_ID'] == selected_match].copy()
+if selected_game:
+    # Data for the selected game
+    game_df = df[df['Game_ID'] == selected_game].copy()
     
-    st.markdown("---")
-    st.subheader(f"Situational Breakdown for {selected_match}")
+    # Career data (all games EXCEPT the selected one) for comparison
+    career_df = df[df['Game_ID'] != selected_game]
 
-    # --- Situational Heatmap ---
-    # Define the situational columns we want to show
-    situational_cols = [
-        'Hits_Singles', 'Hits_Multi', 'Hits_Counters',
-        'Throws_Singles', 'Throws_Multi', 'Throws_Counters',
-        'Dodges_Singles', 'Dodges_Multi', 'Dodges_Counters',
-        'Blocks_Singles', 'Blocks_Multi', 'Blocks_Counters'
-    ]
-    
-    # Make sure the columns exist in the dataframe
-    existing_cols = ['Player_ID', 'Team'] + [col for col in situational_cols if col in match_df.columns]
-    
-    heatmap_data = match_df[existing_cols].set_index('Player_ID')
-    
-    # We only want to display the numeric situational columns in the heatmap
-    heatmap_numeric_cols = [col for col in existing_cols if col not in ['Player_ID', 'Team']]
+    st.subheader(f"Performance in: {selected_game}")
 
-    if not heatmap_numeric_cols:
-        st.warning("No detailed situational data available for this match.")
-    else:
-        fig = px.imshow(
-            heatmap_data[heatmap_numeric_cols],
-            text_auto=True,
-            aspect="auto",
-            color_continuous_scale='Viridis',
-            labels=dict(x="Situation", y="Player", color="Total Actions"),
-            title=f"<b>Player Actions Heatmap for {selected_match}</b>"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    # --- Calculate Career Averages for Comparison ---
+    player_career_avg = career_df.groupby('Player_ID')['Overall_Performance'].mean().reset_index()
+    player_career_avg = player_career_avg.rename(columns={'Overall_Performance': 'Career_Avg_Performance'})
+    
+    # Merge career averages into the game data
+    game_summary = game_df.merge(player_career_avg, on='Player_ID', how='left').fillna(0)
+    
+    # Calculate performance vs career average
+    game_summary['Perf_vs_Avg'] = game_summary['Overall_Performance'] - game_summary['Career_Avg_Performance']
+    
+    # --- Display Table ---
+    st.dataframe(
+        game_summary[[
+            'Player_ID', 'Team', 'Overall_Performance', 'Career_Avg_Performance', 'Perf_vs_Avg',
+            'Hits', 'Throws', 'Catches', 'Dodges'
+        ]].sort_values('Overall_Performance', ascending=False).style.format({
+            'Overall_Performance': '{:.2f}',
+            'Career_Avg_Performance': '{:.2f}',
+            'Perf_vs_Avg': '{:+.2f}'
+        }).bar(subset=['Perf_vs_Avg'], align='mid', color=['#d65f5f', '#5fba7d']),
+        use_container_width=True
+    )
+    st.info("`Perf_vs_Avg` shows how a player's performance in this game compares to their career average. Positive is good, negative is bad.")
 
-    st.markdown("---")
-    
-    # --- Overall Match Performance Table ---
-    st.subheader(f"Overall Player Performance in {selected_match}")
-    
-    # Select and rename columns for a clean display
-    summary_df = match_df[[
-        'Player_ID', 'Team', 'Overall_Performance', 'K/D_Ratio', 
-        'Hits', 'Throws', 'Catches', 'Dodges', 'Blocks', 'Times_Eliminated'
-    ]].sort_values('Overall_Performance', ascending=False)
-    
-    st.dataframe(summary_df, use_container_width=True)
+    # --- Visual Comparison ---
+    fig = px.bar(
+        game_summary.sort_values('Perf_vs_Avg', ascending=False),
+        x='Player_ID',
+        y='Perf_vs_Avg',
+        color='Team',
+        title='Player Performance vs. Career Average for this Game',
+        labels={'Perf_vs_Avg': 'Performance vs. Career Average', 'Player_ID': 'Player'}
+    )
+    fig.add_hline(y=0)
+    st.plotly_chart(fig, use_container_width=True)
+

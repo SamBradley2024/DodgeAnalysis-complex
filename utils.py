@@ -6,11 +6,11 @@ from plotly.subplots import make_subplots
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-from sklearn.model_selection import train_test_split
 import numpy as np
 import warnings
 import gspread
 from google.oauth2.service_account import Credentials
+import re
 
 warnings.filterwarnings('ignore')
 
@@ -27,20 +27,10 @@ def load_css():
             background: #f8f9fa; padding: 1rem; border-radius: 8px;
             border-left: 4px solid #4ECDC4; margin: 0.5rem 0;
         }
-        .insight-box {
-            background: #e8f4fd; padding: 1rem; border-radius: 8px;
-            border-left: 4px solid #1f77b4; margin: 1rem 0;
-            color: #31333F;
-        }
-        .warning-box {
-            background: #fff3cd; padding: 1rem; border-radius: 8px;
-            border-left: 4px solid #ffc107; margin: 1rem 0;
-        }
     </style>
     """
 
 def styled_metric(label, value, help_text=""):
-    """Creates a styled metric box using custom CSS."""
     st.markdown(f'<div class="metric-container" title="{help_text}">', unsafe_allow_html=True)
     st.metric(label, value)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -63,7 +53,11 @@ def get_worksheet_names():
         st.error(f"Could not connect to Google Sheets. Error: {e}")
         return []
 
-# --- NEW: Multi-Game Data Loading and Processing Functions ---
+# --- Multi-Game Data Loading and Processing ---
+def _get_match_id(game_id):
+    """Extracts a match ID from a game ID (e.g., 'Meet 1 Game 2' -> 'Meet 1')."""
+    match = re.match(r'^(.*?)(Game\s*\d*|$)', game_id.strip())
+    return match.group(1).strip() if match else game_id
 
 def _process_single_dataframe(df, game_id, team_name_source):
     """A helper function to process a raw dataframe from a single source."""
@@ -84,25 +78,21 @@ def _process_single_dataframe(df, game_id, team_name_source):
     }
     df = df.rename(columns=rename_map)
 
-    # --- FIX: Robustly convert all relevant columns to numeric types here ---
     for col in df.columns:
-        if col != 'Player_ID': # Don't convert the player name column
-            # Handle non-numeric strings before conversion
+        if col != 'Player_ID':
             if df[col].dtype == 'object':
-                df[col] = df[col].astype(str).str.replace('%', '', regex=False)
-                df[col] = df[col].astype(str).str.replace('#DIV/0!', '0', regex=False)
+                df[col] = df[col].astype(str).str.replace('%', '', regex=False).str.replace('#DIV/0!', '0', regex=False)
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
     team_name = team_name_source.split(' vs ')[0]
     df['Team'] = team_name
-    df['Match_ID'] = 'M1'
     df['Game_ID'] = game_id
+    df['Match_ID'] = _get_match_id(game_id) # Assign Match_ID
     df['Game_Outcome'] = 'Win'
     
     return df
 
 def load_and_process_multiple_sheets(sheet_names):
-    """Loads and processes multiple Google Sheet worksheets, combining them into one DataFrame."""
     all_game_dfs = []
     client = get_gspread_client()
     spreadsheet = client.open("Dodgeball App Data")
@@ -112,63 +102,51 @@ def load_and_process_multiple_sheets(sheet_names):
             worksheet = spreadsheet.worksheet(name)
             data = worksheet.get_all_values()
             if not data or len(data) < 2: continue
-
             header_row = data[0]
             player_names = header_row[1:]
             metric_rows = data[1:]
-            
             processed_data = {'Player_ID': player_names}
             for row in metric_rows:
                 metric_name = row[0]
                 metric_values = row[1:]
                 if len(metric_values) == len(player_names):
                     processed_data[metric_name] = metric_values
-            
             game_df = pd.DataFrame(processed_data)
             processed_df = _process_single_dataframe(game_df, name, header_row[0])
             all_game_dfs.append(processed_df)
         except Exception as e:
             st.warning(f"Could not process sheet '{name}'. Error: {e}")
-
     return pd.concat(all_game_dfs, ignore_index=True) if all_game_dfs else None
 
 def load_and_process_multiple_csvs(uploaded_files):
-    """Loads and processes multiple CSV files, combining them into one DataFrame."""
     all_game_dfs = []
     for file in uploaded_files:
         try:
             df_raw = pd.read_csv(file, header=None)
             if df_raw.empty or len(df_raw) < 2: continue
-
             header_row = df_raw.iloc[0].tolist()
             player_names = header_row[1:]
             metric_rows = df_raw.iloc[1:].values.tolist()
-
             processed_data = {'Player_ID': player_names}
             for row in metric_rows:
                 metric_name = row[0]
                 metric_values = row[1:]
                 if len(metric_values) == len(player_names):
                     processed_data[metric_name] = metric_values
-            
             game_df = pd.DataFrame(processed_data)
-            processed_df = _process_single_dataframe(game_df, file.name, header_row[0])
+            processed_df = _process_single_dataframe(game_df, file.name.replace('.csv', ''), header_row[0])
             all_game_dfs.append(processed_df)
         except Exception as e:
             st.warning(f"Could not process file '{file.name}'. Error: {e}")
-            
     return pd.concat(all_game_dfs, ignore_index=True) if all_game_dfs else None
 
 # --- Data Enhancement & Model Training ---
 def enhance_dataframe(df):
-    """Takes a raw dataframe and adds all calculated metrics and features."""
     required_cols = ['Player_ID', 'Team', 'Game_ID', 'Hits', 'Throws', 'Times_Eliminated']
     if not all(col in df.columns for col in required_cols):
         missing = [col for col in required_cols if col not in df.columns]
         st.error(f"Data enhancement failed. The data is missing required columns: {', '.join(missing)}")
         return None
-
-    # --- FIX: Removed the redundant and less reliable numeric conversion from here ---
 
     df['K/D_Ratio'] = df['Hits'] / df['Times_Eliminated'].replace(0, 1)
     df['Net_Impact'] = (df.get('Hits', 0) + df.get('Catches', 0)) - df.get('Times_Eliminated', 0)
@@ -177,39 +155,27 @@ def enhance_dataframe(df):
     df['Offensive_Rating'] = (df.get('Hits', 0) * 2 + df.get('Throws', 0) * 0.5) / (df.get('Throws', 0) + 1)
     df['Defensive_Rating'] = (df.get('Dodges', 0) + df.get('Catches', 0) * 2) / 3
     df['Overall_Performance'] = (df['Offensive_Rating'] * 0.35 + df['Defensive_Rating'] * 0.35 + df['K/D_Ratio'] * 0.15 + df['Net_Impact'] * 0.05 + df['Hit_Accuracy'] * 0.05 + df['Defensive_Efficiency'] * 0.05)
-    
     return df
 
 def train_advanced_models(df):
-    """Trains ML models and generates player roles."""
     df_copy = df.copy()
     models = {}
-    
     role_features = ['Hits', 'Throws', 'Dodges', 'Catches', 'Hit_Accuracy', 'Defensive_Efficiency', 'Offensive_Rating', 'Defensive_Rating', 'K/D_Ratio']
     existing_role_features = [f for f in role_features if f in df_copy.columns]
-    
     player_avg_stats = df_copy.groupby('Player_ID')[existing_role_features].mean()
-
     if player_avg_stats.empty or len(player_avg_stats) < 4:
         df_copy['Player_Role'] = 'N/A'
         return df_copy, models
-
     scaler = StandardScaler()
     scaled_features = scaler.fit_transform(player_avg_stats)
     kmeans = KMeans(n_clusters=4, random_state=42, n_init='auto')
-    
     player_avg_stats['Role_Cluster'] = kmeans.fit_predict(scaled_features)
-    
     df_copy = df_copy.join(player_avg_stats['Role_Cluster'], on='Player_ID')
-
     role_mapping = {0: 'Offensive Heavy', 1: 'Defensive Wall', 2: 'All-Rounder', 3: 'Evasive Specialist'}
     df_copy['Player_Role'] = df_copy['Role_Cluster'].map(role_mapping).fillna('Generalist')
-    
     return df_copy, models
 
-
 def initialize_app(df, source_name):
-    """Initializes the app by processing data and training models."""
     df_enhanced = enhance_dataframe(df.copy())
     if df_enhanced is not None:
         df_trained, models = train_advanced_models(df_enhanced)
@@ -220,23 +186,19 @@ def initialize_app(df, source_name):
         return True
     return False
 
-# --- Visualization and Coaching Functions ---
+# --- Other functions (coaching reports, etc.) remain here ---
 def generate_advanced_coaching_report(df, player_id):
-    """
-    Generates a highly detailed coaching report with two charts: one for league
-    percentiles and one comparing vs. the player's specific role average.
-    """
     player_games = df[df['Player_ID'] == player_id]
     if player_games.empty: return [], [], None, None
     player_stats = player_games.mean(numeric_only=True)
-    player_stats.name = player_games.index[0]
+    player_stats.name = player_id
 
     stats_to_analyze = [
         'Overall_Performance', 'K/D_Ratio', 'Hits', 'Throws', 'Catches', 'Dodges', 
         'Hits_Singles', 'Throws_Singles', 'Hits_Multi', 'Throws_Multi'
     ]
     existing_stats = [s for s in stats_to_analyze if s in df.columns and pd.api.types.is_numeric_dtype(df[s])]
-
+    
     player_averages = df.groupby('Player_ID')[existing_stats].mean()
     player_percentiles = player_averages.rank(pct=True).loc[player_id]
     
@@ -247,7 +209,7 @@ def generate_advanced_coaching_report(df, player_id):
     strengths_report, weaknesses_report = [], []
     for stat, value in top_strengths.items():
         if value > 0:
-            strengths_report.append(f"**{stat.replace('_', ' ').title()}:** Ranks in the top **{100 - (player_percentiles[stat] * 100):.0f}%** of the league.")
+            strengths_report.append(f"**{stat.replace('_', ' ').title()}:** Ranks in the top **{(1 - player_percentiles[stat]) * 100:.0f}%** of the league.")
     for stat, value in top_weaknesses.items():
         if value < 0:
             weaknesses_report.append(f"**{stat.replace('_', ' ').title()}:** Ranks in the bottom **{player_percentiles[stat] * 100:.0f}%** of the league.")
@@ -256,8 +218,8 @@ def generate_advanced_coaching_report(df, player_id):
     if not weaknesses_report: weaknesses_report.append("No significant weaknesses identified.")
 
     fig_league = go.Figure()
-    fig_league.add_trace(go.Scatterpolar(r=player_percentiles.values * 100, theta=player_percentiles.index.str.replace('_', ' '), fill='toself', name=f'{player_id} Percentile'))
-    fig_league.add_trace(go.Scatterpolar(r=[50] * len(player_percentiles), theta=player_percentiles.index.str.replace('_', ' '), mode='lines', name='League Average (50th)', line=dict(dash='dash')))
+    fig_league.add_trace(go.Scatterpolar(r=player_percentiles.values * 100, theta=[s.replace('_', ' ') for s in player_percentiles.index], fill='toself', name=f'{player_id} Percentile'))
+    fig_league.add_trace(go.Scatterpolar(r=[50] * len(player_percentiles), theta=[s.replace('_', ' ') for s in player_percentiles.index], mode='lines', name='League Average (50th)', line=dict(dash='dash')))
     fig_league.update_layout(height=500, polar=dict(radialaxis=dict(visible=True, range=[0, 100])))
 
     fig_role = None
@@ -265,16 +227,18 @@ def generate_advanced_coaching_report(df, player_id):
     
     if player_role != 'N/A' and 'Player_Role' in df.columns:
         role_df = df[df['Player_Role'] == player_role]
-        if len(role_df) > 1:
+        if len(role_df.groupby('Player_ID').ngroups) > 1:
             role_avg_stats = role_df[existing_stats].mean()
             player_raw_avg_stats = player_averages.loc[player_id]
             
             fig_role = go.Figure()
-            fig_role.add_trace(go.Bar(name=f'{player_id} (Avg)', x=existing_stats, y=player_raw_avg_stats))
-            fig_role.add_trace(go.Bar(name=f'{player_role} Avg.', x=existing_stats, y=role_avg_stats))
+            fig_role.add_trace(go.Bar(name=f'{player_id} (Avg)', x=existing_stats, y=player_raw_avg_stats, marker_color='blue'))
+            fig_role.add_trace(go.Bar(name=f'{player_role} Avg.', x=existing_stats, y=role_avg_stats, marker_color='lightblue'))
             fig_role.update_layout(barmode='group', title_text=f'<b>Player Average Stats vs. Average "{player_role}"</b>', height=500)
 
     return strengths_report, weaknesses_report, fig_league, fig_role
+
+
 
 def create_game_level_features(df):
     """Transforms player-level data into game-level data for win prediction."""

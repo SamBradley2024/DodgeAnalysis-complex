@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 import utils
 
@@ -13,77 +14,77 @@ if 'data_loaded' not in st.session_state or not st.session_state.data_loaded:
 
 df = st.session_state.df_enhanced
 
-# --- Data Cleaning ---
-for col in df.columns:
-    if df[col].dtype == 'object' and col not in ['Player_ID', 'Team', 'Match_ID', 'Game_ID', 'Game_Outcome', 'Player_Role']:
-        if '%' in str(df[col].iloc[0]):
-            df[col] = df[col].str.replace('#DIV/0!', '0', regex=False)
-            df[col] = pd.to_numeric(df[col].str.replace('%', '', regex=False), errors='coerce').fillna(0) / 100.0
-        else:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-# --- Page Content ---
+# --- Team Selection ---
 st.header("🏆 Team Analysis")
-st.info(f"Analyzing detailed situational data from: **{st.session_state.source_name}**")
-st.markdown("---")
-
 team_list = sorted(df['Team'].unique())
 if not team_list:
     st.warning("No teams found in the selected data source.")
     st.stop()
-
+    
 selected_team = st.selectbox("Select Team", team_list)
 
 if selected_team:
-    team_data = df[df['Team'] == selected_team]
+    # Filter for the selected team across all games
+    team_all_games = df[df['Team'] == selected_team].copy()
     
-    # --- Key Team Metrics ---
-    st.subheader("Team Performance Summary")
+    st.subheader(f"Overall Performance for {selected_team}")
+    
+    # --- Career Summary Metrics ---
+    team_career_summary = team_all_games.mean(numeric_only=True)
+    player_count = team_all_games['Player_ID'].nunique()
+    game_count = team_all_games['Game_ID'].nunique()
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        utils.styled_metric("Team Size", team_data['Player_ID'].nunique())
+        utils.styled_metric("Total Players", f"{player_count}")
     with col2:
-        utils.styled_metric("Total Hits", f"{team_data['Hits'].sum():.0f}")
+        utils.styled_metric("Games Played", f"{game_count}")
     with col3:
-        utils.styled_metric("Total Catches", f"{team_data['Catches'].sum():.0f}")
+        utils.styled_metric("Avg Team Performance", f"{team_career_summary.get('Overall_Performance', 0):.2f}")
     with col4:
-        utils.styled_metric("Avg. Team Performance", f"{team_data['Overall_Performance'].mean():.2f}")
-
-    st.markdown("---")
-
-    # --- New Situational Performance Chart ---
-    st.subheader("Team Situational Performance")
+        utils.styled_metric("Avg Team K/D Ratio", f"{team_career_summary.get('K/D_Ratio', 0):.2f}")
     
-    # Aggregate situational stats for the whole team
-    situational_totals = {
-        'Situation': ['Singles', 'Multi-ball', 'Counters', 'Pres'],
-        'Hits': [team_data['Hits_Singles'].sum(), team_data['Hits_Multi'].sum(), team_data['Hits_Counters'].sum(), team_data['Hits_Pres'].sum()],
-        'Throws': [team_data['Throws_Singles'].sum(), team_data['Throws_Multi'].sum(), team_data['Throws_Counters'].sum(), team_data['Throws_Pres'].sum()],
-        'Dodges': [team_data['Dodges_Singles'].sum(), team_data['Dodges_Multi'].sum(), team_data['Dodges_Counters'].sum(), team_data['Dodges_Pres'].sum()],
-        'Blocks': [team_data['Blocks_Singles'].sum(), team_data['Blocks_Multi'].sum(), team_data['Blocks_Counters'].sum(), team_data['Blocks_Pres'].sum()]
-    }
-    situational_df = pd.DataFrame(situational_totals)
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=situational_df['Situation'], y=situational_df['Hits'], name='Hits'))
-    fig.add_trace(go.Bar(x=situational_df['Situation'], y=situational_df['Throws'], name='Throws'))
-    fig.add_trace(go.Bar(x=situational_df['Situation'], y=situational_df['Dodges'], name='Dodges'))
-    fig.add_trace(go.Bar(x=situational_df['Situation'], y=situational_df['Blocks'], name='Blocks'))
-
-    fig.update_layout(
-        barmode='group',
-        title=f'<b>Team Action Totals by Situation for {selected_team}</b>',
-        xaxis_title="Situation",
-        yaxis_title="Total Count"
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
     st.markdown("---")
 
-    # --- Player Contribution ---
-    st.subheader("Player Contribution to Team Performance")
-    st.dataframe(
-        team_data[['Player_ID', 'Overall_Performance', 'K/D_Ratio', 'Hits', 'Catches', 'Dodges', 'Blocks']]
-        .sort_values('Overall_Performance', ascending=False),
-        use_container_width=True
-    )
+    # --- Analysis Tabs ---
+    tab1, tab2, tab3 = st.tabs(["Player Roster", "Team Situational Stats", "Role Distribution"])
+
+    with tab1:
+        st.subheader("Player Roster and Key Stats (Career Averages)")
+        player_summary = team_all_games.groupby('Player_ID').agg(
+            Overall_Performance=('Overall_Performance', 'mean'),
+            K_D_Ratio=('K/D_Ratio', 'mean'),
+            Hits=('Hits', 'mean'),
+            Catches=('Catches', 'mean'),
+            Dodges=('Dodges', 'mean'),
+            Player_Role=('Player_Role', 'first')
+        ).reset_index().sort_values('Overall_Performance', ascending=False)
+        
+        st.dataframe(player_summary.style.format({
+            'Overall_Performance': '{:.2f}', 'K_D_Ratio': '{:.2f}', 'Hits': '{:.2f}', 'Catches': '{:.2f}', 'Dodges': '{:.2f}'
+        }), use_container_width=True)
+
+    with tab2:
+        st.subheader("Team Situational Performance (Averages per Game)")
+        
+        # Using the team's career (cross-game) averages for the chart
+        fig = go.Figure()
+        fig.add_trace(go.Bar(name='Avg Hits', x=['Singles', 'Multi-ball', 'Counters'], y=[team_career_summary.get('Hits_Singles', 0), team_career_summary.get('Hits_Multi', 0), team_career_summary.get('Hits_Counters', 0)]))
+        fig.add_trace(go.Bar(name='Avg Throws', x=['Singles', 'Multi-ball', 'Counters'], y=[team_career_summary.get('Throws_Singles', 0), team_career_summary.get('Throws_Multi', 0), team_career_summary.get('Throws_Counters', 0)]))
+        fig.add_trace(go.Bar(name='Avg Dodges', x=['Singles', 'Multi-ball', 'Counters'], y=[team_career_summary.get('Dodges_Singles', 0), team_career_summary.get('Dodges_Multi', 0), team_career_summary.get('Dodges_Counters', 0)]))
+        fig.update_layout(barmode='group', title_text="<b>Team's Situational Strengths (Career Averages)</b>")
+        st.plotly_chart(fig, use_container_width=True)
+
+    with tab3:
+        st.subheader("Player Role Distribution")
+        if 'Player_Role' in team_all_games.columns and team_all_games['Player_Role'].nunique() > 1:
+            role_counts = team_all_games.drop_duplicates(subset=['Player_ID'])['Player_Role'].value_counts()
+            fig2 = px.pie(
+                values=role_counts.values,
+                names=role_counts.index,
+                title="Team Composition by Player Role"
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.info("Role analysis requires more data or player variation.")
+

@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import utils
 
 # --- Page Configuration and State Check ---
@@ -14,94 +15,104 @@ if 'data_loaded' not in st.session_state or not st.session_state.data_loaded:
 
 df = st.session_state.df_enhanced
 
-# --- Data Cleaning ---
-for col in df.columns:
-    if df[col].dtype == 'object' and col not in ['Player_ID', 'Team', 'Match_ID', 'Game_ID', 'Game_Outcome', 'Player_Role']:
-        df[col] = pd.to_numeric(df[col].str.replace('%', '', regex=False).str.replace('#DIV/0!', '0', regex=False), errors='coerce').fillna(0)
-        if '%' in str(df[col].iloc[0]):
-             df[col] = df[col] / 100.0
-
-# --- Page Content ---
-st.header("👤 Individual Player Analysis")
-st.info(f"Analyzing detailed situational data from: **{st.session_state.source_name}**")
-
+# --- Player Selection ---
 player_list = sorted(df['Player_ID'].unique())
+if not player_list:
+    st.warning("No players found in the selected data source.")
+    st.stop()
+    
+st.header("👤 Individual Player Analysis")
 selected_player = st.selectbox("Select Player", player_list)
 
 if selected_player:
-    player_data = df[df['Player_ID'] == selected_player]
-    player_stats = player_data.iloc[0]
-
-    # ... (Offensive, Defensive, and Elimination charts remain the same) ...
-    # --- Offensive Analysis with Stacked Chart ---
-    st.subheader("Offensive Breakdown")
+    # Filter data for the selected player across all games
+    player_all_games = df[df['Player_ID'] == selected_player].copy()
     
-    offensive_df = pd.DataFrame({
-        'Situation': ['Singles', 'Multi-ball', 'Counters', 'Pres'],
-        'Hits': [player_stats.get(c, 0) for c in ['Hits_Singles', 'Hits_Multi', 'Hits_Counters', 'Hits_Pres']],
-        'Throws': [player_stats.get(c, 0) for c in ['Throws_Singles', 'Throws_Multi', 'Throws_Counters', 'Throws_Pres']]
-    })
-    offensive_df['Misses'] = offensive_df['Throws'] - offensive_df['Hits']
-    offensive_df['Hit_Accuracy'] = (offensive_df['Hits'] / offensive_df['Throws'].replace(0, 1))
-
-    fig_offense = go.Figure()
-    fig_offense.add_trace(go.Bar(x=offensive_df['Situation'], y=offensive_df['Hits'], name='Hits', marker_color='green'))
-    fig_offense.add_trace(go.Bar(x=offensive_df['Situation'], y=offensive_df['Misses'], name='Misses', marker_color='red'))
-    fig_offense.update_layout(barmode='stack', title_text='<b>Offensive Performance: Hits vs. Misses</b>', yaxis_title='Total Throws')
+    # --- Career Summary Metrics ---
+    st.subheader(f"Career Averages for {selected_player}")
+    career_summary = player_all_games.mean(numeric_only=True)
     
-    for i, row in offensive_df.iterrows():
-        fig_offense.add_annotation(x=row['Situation'], y=row['Throws'], text=f"<b>{row['Hit_Accuracy']:.1%} Acc.</b>", showarrow=False, yshift=10)
-
-    st.plotly_chart(fig_offense, use_container_width=True)
-
-    # --- Defensive Analysis with Stacked Chart ---
-    st.subheader("Defensive Breakdown")
-    
-    defensive_df = pd.DataFrame({
-        'Situation': ['Singles', 'Multi-ball', 'Counters', 'Pres'],
-        'Dodges': [player_stats.get(c, 0) for c in ['Dodges_Singles', 'Dodges_Multi', 'Dodges_Counters', 'Dodges_Pres']],
-        'Blocks': [player_stats.get(c, 0) for c in ['Blocks_Singles', 'Blocks_Multi', 'Blocks_Counters', 'Blocks_Pres']],
-        'Times_Thrown_At': [player_stats.get(c, 0) for c in ['Thrown_At_Singles', 'Thrown_At_Multi', 'Thrown_At_Counters', 'Thrown_At_Pres']],
-    })
-    defensive_df['Hit_Out'] = defensive_df['Times_Thrown_At'] - defensive_df['Dodges'] - defensive_df['Blocks']
-    defensive_df['Survivability'] = 1 - (defensive_df['Hit_Out'] / defensive_df['Times_Thrown_At'].replace(0, 1))
-
-    fig_defense = go.Figure()
-    fig_defense.add_trace(go.Bar(x=defensive_df['Situation'], y=defensive_df['Dodges'], name='Dodges', marker_color='blue'))
-    fig_defense.add_trace(go.Bar(x=defensive_df['Situation'], y=defensive_df['Blocks'], name='Blocks', marker_color='lightblue'))
-    fig_defense.add_trace(go.Bar(x=defensive_df['Situation'], y=defensive_df['Hit_Out'], name='Hit Out', marker_color='orange'))
-    fig_defense.update_layout(barmode='stack', title_text='<b>Defensive Performance: Actions vs. Hit Out</b>', yaxis_title='Times Thrown At')
-    
-    for i, row in defensive_df.iterrows():
-        fig_defense.add_annotation(x=row['Situation'], y=row['Times_Thrown_At'], text=f"<b>{row['Survivability']:.1%} Surv.</b>", showarrow=False, yshift=10)
-
-    st.plotly_chart(fig_defense, use_container_width=True)
-
-    # --- Elimination Profile ---
-    st.subheader("Elimination Profile")
-    col1, col2 = st.columns(2)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        elim_data = { 'Reason': ['Hit by Player', 'Caught by Opponent'], 'Count': [player_stats.get('Hit_Out', 0), player_stats.get('Caught_Out', 0)] }
-        elim_df = pd.DataFrame(elim_data)
-        fig_elim = px.pie(elim_df, values='Count', names='Reason', title='How Player is Eliminated')
-        st.plotly_chart(fig_elim, use_container_width=True)
+        utils.styled_metric("Avg Performance", f"{career_summary.get('Overall_Performance', 0):.2f}")
     with col2:
-        catch_data = { 'Result': ['Successful Catches', 'Failed Attempts'], 'Count': [player_stats.get('Catches', 0), player_stats.get('Catches_Attempted', 0) - player_stats.get('Catches', 0)] }
-        catch_df = pd.DataFrame(catch_data)
-        fig_catch = px.pie(catch_df, values='Count', names='Result', title='Player Catching Performance')
-        st.plotly_chart(fig_catch, use_container_width=True)
+        utils.styled_metric("Avg K/D Ratio", f"{career_summary.get('K/D_Ratio', 0):.2f}")
+    with col3:
+        utils.styled_metric("Avg Hits / Game", f"{career_summary.get('Hits', 0):.2f}")
+    with col4:
+        utils.styled_metric("Avg Catches / Game", f"{career_summary.get('Catches', 0):.2f}")
+    
+    st.markdown("---")
 
-    # --- UPGRADED: Dynamic Performance Trend ---
-    st.subheader("Game-by-Game Trend")
+    # --- Analysis Tabs ---
+    tab1, tab2, tab3, tab4 = st.tabs(["Offense", "Defense", "Elimination Profile", "Performance Trends"])
     
-    trend_metrics = [
-        'Overall_Performance', 'K/D_Ratio', 'Hits', 'Catches', 'Dodges', 'Throws'
-    ]
-    selected_trend_metric = st.selectbox("Select metric to track over time:", trend_metrics)
-    
-    if selected_trend_metric:
-        fig_trend = px.line(player_data, x='Game_ID', y=selected_trend_metric, markers=True, title=f'{selected_player} - {selected_trend_metric.replace("_", " ")} Trend')
-        if len(player_data) == 1:
-            fig_trend.update_traces(mode='markers', marker=dict(size=12))
-        st.plotly_chart(fig_trend, use_container_width=True)
+    with tab1:
+        st.subheader("Offensive Situational Analysis (Career Averages)")
+        
+        offensive_df = pd.DataFrame({
+            'Situation': ['Singles', 'Multi-ball', 'Counters'],
+            'Hits': [career_summary.get('Hits_Singles', 0), career_summary.get('Hits_Multi', 0), career_summary.get('Hits_Counters', 0)],
+            'Throws': [career_summary.get('Throws_Singles', 0), career_summary.get('Throws_Multi', 0), career_summary.get('Throws_Counters', 0)]
+        })
+        offensive_df['Hit_Accuracy'] = (offensive_df['Hits'] / offensive_df['Throws'].replace(0, 1)) * 100
+
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.add_trace(go.Bar(x=offensive_df['Situation'], y=offensive_df['Hits'], name='Avg Hits', marker_color='#1f77b4'), secondary_y=False)
+        fig.add_trace(go.Bar(x=offensive_df['Situation'], y=offensive_df['Throws'], name='Avg Throws', marker_color='#aec7e8'), secondary_y=False)
+        fig.add_trace(go.Scatter(x=offensive_df['Situation'], y=offensive_df['Hit_Accuracy'], name='Hit Accuracy (%)', mode='lines+markers', line=dict(color='red', width=3)), secondary_y=True)
+        fig.update_layout(title_text='<b>Offensive Performance by Situation (Career Averages)</b>', barmode='group')
+        fig.update_yaxes(title_text="Average Count", secondary_y=False)
+        fig.update_yaxes(title_text="Hit Accuracy (%)", secondary_y=True, range=[0, 101])
+        st.plotly_chart(fig, use_container_width=True)
+
+    with tab2:
+        st.subheader("Defensive Situational Analysis (Career Averages)")
+        
+        defensive_df = pd.DataFrame({
+            'Situation': ['Singles', 'Multi-ball', 'Counters'],
+            'Dodges': [career_summary.get('Dodges_Singles', 0), career_summary.get('Dodges_Multi', 0), career_summary.get('Dodges_Counters', 0)],
+            'Blocks': [career_summary.get('Blocks_Singles', 0), career_summary.get('Blocks_Multi', 0), career_summary.get('Blocks_Counters', 0)],
+            'Hit_Out': [career_summary.get('Out_Single_Hit', 0), career_summary.get('Out_Multi_Hit', 0), career_summary.get('Out_Counter_Hit', 0)]
+        })
+
+        fig2 = go.Figure()
+        fig2.add_trace(go.Bar(x=defensive_df['Situation'], y=defensive_df['Dodges'], name='Avg Dodges', marker_color='#2ca02c'))
+        fig2.add_trace(go.Bar(x=defensive_df['Situation'], y=defensive_df['Blocks'], name='Avg Blocks', marker_color='#98df8a'))
+        fig2.add_trace(go.Bar(x=defensive_df['Situation'], y=defensive_df['Hit_Out'], name='Avg Times Hit Out', marker_color='#d62728'))
+        fig2.update_layout(title_text='<b>Defensive Actions by Situation (Career Averages)</b>', barmode='group')
+        st.plotly_chart(fig2, use_container_width=True)
+
+    with tab3:
+        st.subheader("Elimination Profile (Career Totals)")
+        elimination_totals = player_all_games[['Out_Single_Hit', 'Out_Multi_Hit', 'Out_Counter_Hit', 'Caught_Out', 'Out_Other']].sum()
+        elim_df = pd.DataFrame({
+            'Reason': ['Hit (Single)', 'Hit (Multi)', 'Hit (Counter)', 'Caught Out', 'Other'],
+            'Count': elimination_totals.values
+        })
+        elim_df = elim_df[elim_df['Count'] > 0]
+        if not elim_df.empty:
+            fig3 = px.pie(elim_df, values='Count', names='Reason', title='How Player is Eliminated (Career Total)')
+            st.plotly_chart(fig3, use_container_width=True)
+        else:
+            st.info("This player has not been eliminated in the loaded games.")
+
+    with tab4:
+        st.subheader("Performance Trend Over Games")
+        
+        trend_metrics = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col]) and col not in ['Role_Cluster']]
+        selected_trend_metric = st.selectbox("Select metric to track:", trend_metrics, index=trend_metrics.index('Overall_Performance'))
+        
+        if len(player_all_games) > 1:
+            fig4 = px.line(
+                player_all_games.sort_values('Game_ID'),
+                x='Game_ID',
+                y=selected_trend_metric,
+                markers=True,
+                title=f"{selected_trend_metric.replace('_', ' ')} Trend Across Games"
+            )
+            fig4.update_layout(xaxis_title="Game", yaxis_title=selected_trend_metric.replace('_', ' '))
+            st.plotly_chart(fig4, use_container_width=True)
+        else:
+            st.info("Load more games to see performance trends over time.")
 
