@@ -21,7 +21,7 @@ st.info(f"Analyzing {df['Game_ID'].nunique()} games from: **{st.session_state.so
 # This block now correctly includes all necessary columns to prevent KeyErrors.
 player_summary = df.groupby('Player_ID').agg(
     Overall_Performance=('Overall_Performance', 'mean'),
-    K_D_Ratio=('K_D_Ratio', 'mean'),
+    K_D_Ratio=('K/D_Ratio', 'mean'),
     Hit_Accuracy=('Hit_Accuracy', 'mean'),
     Hits=('Hits', 'mean'),
     Throws=('Throws', 'mean'),
