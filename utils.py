@@ -277,10 +277,19 @@ def train_advanced_models(_df):
     return df, models
 
 def initialize_app(df, source_name):
-    """Initializes the app by processing data and training models."""
-    with st.spinner(f"Processing data from '{source_name}' and training models..."):
-        df_enhanced = enhance_dataframe(df.copy())
-        if df_enhanced is not None:
+    """
+    Initializes the app by processing data and training models.
+    MODIFIED: Now returns True on success and False on failure.
+    """
+    try:
+        with st.spinner(f"Processing data from '{source_name}' and training models..."):
+            df_enhanced = enhance_dataframe(df.copy())
+            
+            # This is the critical check. If enhancement fails, stop and report failure.
+            if df_enhanced is None:
+                st.error("Data enhancement failed. Please check the data format and column names in your source file.")
+                return False
+
             df_trained, models = train_advanced_models(df_enhanced)
             
             game_level_df = create_game_level_features(df_trained)
@@ -292,6 +301,13 @@ def initialize_app(df, source_name):
             st.session_state.models = models
             st.session_state.data_loaded = True
             st.session_state.source_name = source_name
+            
+            # Report success
+            return True
+            
+    except Exception as e:
+        st.error(f"An unexpected error occurred during data initialization: {e}")
+        return False
 
 def create_game_level_features(df):
     """Transforms player-level data into game-level data for win prediction."""
