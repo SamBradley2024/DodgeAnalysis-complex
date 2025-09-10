@@ -93,8 +93,8 @@ def get_worksheet_names():
 
 def load_and_process_google_sheet(worksheet_name):
     """
-    Loads and processes a worksheet from Google Sheets with the new, pivoted format.
-    This is a more robust version that builds the DataFrame directly and correctly handles all columns.
+    Loads and processes a worksheet from Google Sheets.
+    This version is expanded to handle all specific situational stats.
     """
     try:
         client = get_gspread_client()
@@ -119,30 +119,48 @@ def load_and_process_google_sheet(worksheet_name):
         
         df = pd.DataFrame(processed_data)
 
-        # --- Corrected Renaming and Column Handling ---
+        # --- EXPANDED MAPPING DICTIONARY ---
+        # This now includes all the specific columns from your file.
         rename_map = {
-            'Overall Hits': 'Hits',
-            'Overall Throws': 'Throws',
-            'Catches made': 'Catches',
-            'Overall Outs': 'Times_Eliminated',
-            'Out (caught)': 'Caught_Out',
-            'Out (overall hits)': 'Hit_Out',
-            'Dodges': 'Dodges', # Ensure direct mapping
-            'Blocks': 'Blocks'  # Ensure direct mapping
+            # Base Stats
+            'Sets Played': 'Sets_Played',
+            # Hit & Throw Types
+            'Hits (singles)': 'Hits_Singles', 'Throws (singles)': 'Throws_Singles',
+            'Hits (multi-ball)': 'Hits_Multi', 'Throws (multi-ball)': 'Throws_Multi',
+            'Hits (counters)': 'Hits_Counters', 'Throws (counters)': 'Throws_Counters',
+            'Hits (pres)': 'Hits_Pres', 'Throws (pres)': 'Throws_Pres',
+            # Overall Hit & Throw
+            'Overall Hits': 'Hits', 'Overall Throws': 'Throws',
+            # Catching
+            'Catches made': 'Catches', 'Catches attempted': 'Catches_Attempted',
+            # Outs by Type
+            'Out (single hit)': 'Out_Single_Hit', 'Out (multi hit)': 'Out_Multi_Hit',
+            'Out (counter hit)': 'Out_Counter_Hit', 'Out (pre hit)': 'Out_Pre_Hit',
+            'Out (overall hits)': 'Hit_Out', 'Out (caught)': 'Caught_Out',
+            'Out (other)': 'Out_Other', 'Overall Outs': 'Times_Eliminated',
+            # Dodges by Type
+            'Dodges (singles)': 'Dodges_Singles', 'Dodges (multi-ball)': 'Dodges_Multi',
+            'Dodges (counters)': 'Dodges_Counters', 'Dodges (pres)': 'Dodges_Pres',
+            'Dodges (overall)': 'Dodges',
+            # Blocks by Type
+            'Blocks (singles)': 'Blocks_Singles', 'Blocks (multi-ball)': 'Blocks_Multi',
+            'Blocks (counters)': 'Blocks_Counters', 'Blocks (pres)': 'Blocks_Pres',
+            'Blocks (overall)': 'Blocks',
+            # Survivability
+            'Times Thrown At (singles)': 'Thrown_At_Singles', 'Survivability % (singles)': 'Survivability_Singles',
+            'Times Thrown At (multi-ball)': 'Thrown_At_Multi', 'Survivability % (multi-ball)': 'Survivability_Multi',
+            'Times Thrown At (counters)': 'Thrown_At_Counters', 'Survivability % (counters)': 'Survivability_Counters',
+            'Times Thrown At (pres)': 'Thrown_At_Pres', 'Survivability % (pres)': 'Survivability_Pres',
+            'Times Thrown At (overall)': 'Thrown_At_Overall', 'Survivability % (overall)': 'Survivability_Overall',
+            # Percentages (handled separately)
         }
         df = df.rename(columns=rename_map)
-
+        
         team_name = header_row[0].split(' vs ')[0]
         df['Team'] = team_name
         df['Match_ID'] = 'M1'
         df['Game_ID'] = 'G1'
         df['Game_Outcome'] = 'Win'
-
-        # --- Corrected Logic: Only add columns if they are truly missing ---
-        expected_cols = ['Dodges', 'Blocks']
-        for col in expected_cols:
-            if col not in df.columns:
-                df[col] = 0 # Add as 0 only if not found in the source file
         
         return df
     except Exception as e:
@@ -152,7 +170,7 @@ def load_and_process_google_sheet(worksheet_name):
 def load_and_process_custom_csv(uploaded_file):
     """
     Loads and processes a custom-formatted CSV file into a tidy DataFrame.
-    This version mirrors the corrected Google Sheet logic.
+    This version is expanded to handle all specific situational stats.
     """
     try:
         df_raw = pd.read_csv(uploaded_file, header=None)
@@ -174,16 +192,30 @@ def load_and_process_custom_csv(uploaded_file):
         
         df = pd.DataFrame(processed_data)
 
-        # --- Corrected Renaming and Column Handling ---
+        # --- EXPANDED MAPPING DICTIONARY ---
         rename_map = {
-            'Overall Hits': 'Hits',
-            'Overall Throws': 'Throws',
-            'Catches made': 'Catches',
-            'Overall Outs': 'Times_Eliminated',
-            'Out (caught)': 'Caught_Out',
-            'Out (overall hits)': 'Hit_Out',
-            'Dodges (overall)': 'Dodges', 
-            'Blocks (overall)': 'Blocks'  
+            'Sets Played': 'Sets_Played',
+            'Hits (singles)': 'Hits_Singles', 'Throws (singles)': 'Throws_Singles',
+            'Hits (multi-ball)': 'Hits_Multi', 'Throws (multi-ball)': 'Throws_Multi',
+            'Hits (counters)': 'Hits_Counters', 'Throws (counters)': 'Throws_Counters',
+            'Hits (pres)': 'Hits_Pres', 'Throws (pres)': 'Throws_Pres',
+            'Overall Hits': 'Hits', 'Overall Throws': 'Throws',
+            'Catches made': 'Catches', 'Catches attempted': 'Catches_Attempted',
+            'Out (single hit)': 'Out_Single_Hit', 'Out (multi hit)': 'Out_Multi_Hit',
+            'Out (counter hit)': 'Out_Counter_Hit', 'Out (pre hit)': 'Out_Pre_Hit',
+            'Out (overall hits)': 'Hit_Out', 'Out (caught)': 'Caught_Out',
+            'Out (other)': 'Out_Other', 'Overall Outs': 'Times_Eliminated',
+            'Dodges (singles)': 'Dodges_Singles', 'Dodges (multi-ball)': 'Dodges_Multi',
+            'Dodges (counters)': 'Dodges_Counters', 'Dodges (pres)': 'Dodges_Pres',
+            'Dodges (overall)': 'Dodges',
+            'Blocks (singles)': 'Blocks_Singles', 'Blocks (multi-ball)': 'Blocks_Multi',
+            'Blocks (counters)': 'Blocks_Counters', 'Blocks (pres)': 'Blocks_Pres',
+            'Blocks (overall)': 'Blocks',
+            'Times Thrown At (singles)': 'Thrown_At_Singles', 'Survivability % (singles)': 'Survivability_Singles',
+            'Times Thrown At (multi-ball)': 'Thrown_At_Multi', 'Survivability % (multi-ball)': 'Survivability_Multi',
+            'Times Thrown At (counters)': 'Thrown_At_Counters', 'Survivability % (counters)': 'Survivability_Counters',
+            'Times Thrown At (pres)': 'Thrown_At_Pres', 'Survivability % (pres)': 'Survivability_Pres',
+            'Times Thrown At (overall)': 'Thrown_At_Overall', 'Survivability % (overall)': 'Survivability_Overall',
         }
         df = df.rename(columns=rename_map)
 
@@ -192,12 +224,6 @@ def load_and_process_custom_csv(uploaded_file):
         df['Match_ID'] = 'M1'
         df['Game_ID'] = 'G1'
         df['Game_Outcome'] = 'Win'
-
-        # --- Corrected Logic: Only add columns if they are truly missing ---
-        expected_cols = ['Dodges', 'Blocks']
-        for col in expected_cols:
-            if col not in df.columns:
-                df[col] = 0 # Add as 0 only if not found in the source file
                 
         return df
     except Exception as e:
