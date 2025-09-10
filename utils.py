@@ -199,16 +199,22 @@ def load_and_process_custom_csv(uploaded_file):
 
 def enhance_dataframe(df):
     """Takes a raw dataframe and adds all calculated metrics and features."""
-    # --- MODIFIED ---
-    # The new required columns after processing the custom CSV
-    required_cols = ['Match_ID', 'Player_ID', 'Team', 'Game_ID', 'Game_Outcome', 
-                     'Hits', 'Throws', 'Catches', 'Times_Eliminated', 
-                     'Caught_Out', 'Hit_Out', 'Dodges', 'Blocks']
+    required_cols = [
+        'Match_ID', 'Player_ID', 'Team', 'Game_ID', 'Game_Outcome', 
+        'Hits', 'Throws', 'Catches', 'Times_Eliminated', 
+        'Caught_Out', 'Hit_Out', 'Dodges', 'Blocks'
+    ]
     
-    if not all(col in df.columns for col in required_cols):
-        st.error("The data is missing required columns. Please ensure it has: " + ", ".join(required_cols))
+    # --- MODIFIED: More detailed error checking ---
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    
+    if missing_cols:
+        st.error(f"Data Enhancement Failed: The following required columns are missing from the data source: **{', '.join(missing_cols)}**")
+        st.info("Please check your source file to ensure these columns exist and are named correctly. The column names are case-sensitive.")
+        st.info("The loading function expects these source columns to be renamed: 'Overall Hits' -> 'Hits', 'Overall Throws' -> 'Throws', 'Catches made' -> 'Catches', 'Overall Outs' -> 'Times_Eliminated', 'Out (caught)' -> 'Caught_Out', 'Out (overall hits)' -> 'Hit_Out'")
         return None
-
+    
+    # --- (Rest of the function is the same) ---
     # Convert numeric columns to numeric types
     numeric_cols = ['Hits', 'Throws', 'Catches', 'Times_Eliminated', 'Caught_Out', 'Hit_Out', 'Dodges', 'Blocks']
     for col in numeric_cols:
@@ -223,7 +229,25 @@ def enhance_dataframe(df):
     df['Defensive_Rating'] = (df['Dodges'] + df['Catches'] * 2) / 3
     df['Overall_Performance'] = (df['Offensive_Rating'] * 0.35 + df['Defensive_Rating'] * 0.35 + df['K/D_Ratio'] * 0.15 + df['Net_Impact'] * 0.05 + df['Hit_Accuracy'] * 0.05 + df['Defensive_Efficiency'] * 0.05)
     df['Game_Impact'] = np.where(df['Game_Outcome'] == 'Win', df['Overall_Performance'] * 1.2, df['Overall_Performance'] * 0.8)
+    
+    # The functions below that were not included in the original file have been added to prevent errors
+    
+    df['Win_Rate'] = df.groupby('Player_ID')['Game_Outcome'].transform(lambda x: (x == 'Win').mean())
+    
+    df['Game_Num_In_Match'] = df.groupby(['Player_ID', 'Match_ID']).cumcount() + 1
+    
+    stamina_trends = df.groupby('Player_ID').apply(
+        lambda x: x.corr(numeric_only=True).loc['Game_Num_In_Match', 'Overall_Performance']
+        if x['Game_Num_In_Match'].nunique() > 1 else np.nan
+    ).rename('Stamina_Trend')
+    
+    df = df.merge(stamina_trends, on='Player_ID', how='left')
 
+    consistency_scores = df.groupby('Player_ID')['Overall_Performance'].std().rename('Consistency_Score')
+    consistency_scores = 1 / (consistency_scores + 0.01)
+    df = df.merge(consistency_scores, on='Player_ID', how='left')
+
+    return df
 
 @st.cache_resource
 def train_advanced_models(_df):
