@@ -705,58 +705,52 @@ def generate_team_coaching_report(df, team_id):
             report.append("\n**Strategic Gap**: The team lacks a dedicated 'Catcher' type player.")
     return report
 
-def generate_insights(df, models):
-    """Generate more advanced, AI-powered insights from the data."""
+def generate_situational_insights(df):
+    """
+    Generate more advanced, AI-powered insights from the detailed situational data.
+    """
     insights = []
-
-    # Insight 1: Top Performer
-    top_performer = df.groupby('Player_ID')['Overall_Performance'].mean().idxmax()
-    top_score = df.groupby('Player_ID')['Overall_Performance'].mean().max()
-    insights.append(f"🏆 Top Performer: {top_performer} leads the league with an average performance score of {top_score:.2f}.")
-
-    # Insight 2: Key to Success
-    corr_cols = [
-        'Hits', 'Throws', 'Catches', 'Dodges', 'Blocks', 'Hit_Accuracy', 
-        'K/D_Ratio', 'Net_Impact', 'Defensive_Efficiency', 
-        'Offensive_Rating', 'Defensive_Rating', 'Overall_Performance'
-    ]
-    existing_corr_cols = [col for col in corr_cols if col in df.columns]
-    if 'Overall_Performance' in existing_corr_cols:
-        performance_corr = df[existing_corr_cols].corr(numeric_only=True)['Overall_Performance'].abs().sort_values(ascending=False)
-        if len(performance_corr) > 1:
-            top_corr_skill = performance_corr.index[1]
-            insights.append(f"📈 Key to Success: In this dataset, {top_corr_skill.replace('_', ' ')} has the strongest correlation with a player's Overall Performance score.")
-
-    # --- CORRECTED: Insight 3 now correctly calculates team averages ---
-    stats_to_check = ['Hit_Accuracy', 'K/D_Ratio', 'Dodges', 'Catches']
     
-    league_avg = df[stats_to_check].mean()
-    team_averages = df.groupby('Team')[stats_to_check].mean()
+    # Ensure data is numeric before calculating league average
+    numeric_cols = df.select_dtypes(include=['number']).columns
+    league_avg = df[numeric_cols].mean()
 
-    if not team_averages.empty and len(team_averages) > 1:
-        for team_name, team_stats in team_averages.iterrows():
-            comparison = (team_stats - league_avg) / league_avg
-            
-            if not comparison.empty:
-                weakest_stat = comparison.idxmin()
-                weakness_value = comparison.min()
-                
-                if weakness_value < -0.15: # Only report significant weaknesses
-                    weakness_stat_clean = weakest_stat.replace('_', ' ').title()
-                    insights.append(f"💡 Coaching Focus for {team_name}: Their biggest statistical weakness is in **{weakness_stat_clean}**, which is {abs(weakness_value):.0%} below the league average.")
+    # Insight 1: Find the biggest "Specialist"
+    player_avg_stats = df.groupby('Player_ID')[numeric_cols].mean()
+    specialization = player_avg_stats / (league_avg + 1e-6)
+    
+    # Find player with the highest single specialization score
+    max_spec_player = specialization.max().idxmax()
+    max_spec_value = specialization.max().max()
+    player_with_max_spec = specialization[max_spec_player].idxmax()
 
-    # Insight 4: Stamina Analysis
-    if 'Stamina_Trend' in df.columns:
-        stamina_data = df.groupby('Player_ID')['Stamina_Trend'].first().dropna()
-        if not stamina_data.empty:
-            worst_stamina_player = stamina_data.idxmin()
-            worst_stamina_score = stamina_data.min()
-            if worst_stamina_score < -0.3:
-                insights.append(f"🏃 Stamina Watch: {worst_stamina_player} shows a tendency to fade, as their performance drops significantly in later games within a match.")
+    if max_spec_value > 2.5: # Only report if someone is > 2.5x league average
+        insights.append(f"👑 **Extreme Specialist:** **{player_with_max_spec}** is a standout specialist in **{max_spec_player.replace('_', ' ')}**, performing at **{max_spec_value:.1f}x** the league average in that specific situation.")
 
-            best_stamina_player = stamina_data.idxmax()
-            best_stamina_score = stamina_data.max()
-            if best_stamina_score > 0.3:
-                insights.append(f"⚡ Strong Finisher: {best_stamina_player} is a clutch player who consistently improves their performance as a match progresses.")
+    # Insight 2: Find players with the biggest performance gap
+    df['offense_gap'] = df['Hits_Singles'] - df['Hits_Multi']
+    df['defense_gap'] = df['Dodges_Singles'] - df['Dodges_Multi']
+    
+    biggest_offense_gap_player = df.loc[df['offense_gap'].idxmax()]
+    if biggest_offense_gap_player['offense_gap'] > 5: # If the gap is more than 5 hits
+        insights.append(f"🎯 **Singles Dominator:** **{biggest_offense_gap_player['Player_ID']}** is significantly more effective in single-ball situations, with **{biggest_offense_gap_player['offense_gap']:.0f}** more hits in Singles than Multi-ball.")
+
+    biggest_defense_gap_player = df.loc[df['defense_gap'].idxmax()]
+    if biggest_defense_gap_player['defense_gap'] > 5: # If the gap is more than 5 dodges
+        insights.append(f"🏃 **Evasive Specialist:** **{biggest_defense_gap_player['Player_ID']}** relies heavily on dodging in single-ball situations, with **{biggest_defense_gap_player['defense_gap']:.0f}** more dodges in Singles than Multi-ball.")
+
+    # Insight 3: Team-level Tactical Insight
+    team_counter_hits = df.groupby('Team')['Hits_Counters'].sum()
+    team_total_hits = df.groupby('Team')['Hits'].sum()
+    team_counter_ratio = (team_counter_hits / team_total_hits).dropna()
+    
+    if not team_counter_ratio.empty:
+        top_counter_team = team_counter_ratio.idxmax()
+        top_ratio = team_counter_ratio.max()
+        if top_ratio > 0.4: # If more than 40% of hits are from counters
+            insights.append(f"💥 **Counter-Attack Kings:** **{top_counter_team}** excels at turning defense into offense. A massive **{top_ratio:.1%}** of their total hits come from counter-attacks.")
+
+    if not insights:
+        insights.append("✅ **Balanced Dataset:** No extreme outliers or specialists were identified. The teams and players in this dataset show relatively balanced performance across different situations.")
 
     return insights

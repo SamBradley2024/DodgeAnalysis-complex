@@ -3,91 +3,96 @@ import pandas as pd
 import plotly.express as px
 import utils
 
-# --- State Management and Sidebar ---
-st.set_page_config(page_title="Advanced Analytics", page_icon="📊", layout="wide")
+# --- Page Configuration and State Check ---
+st.set_page_config(page_title="Advanced Analytics", page_icon="🔬", layout="wide")
 st.markdown(utils.load_css(), unsafe_allow_html=True)
 
-# Check if data has been loaded from the Home page
 if 'data_loaded' not in st.session_state or not st.session_state.data_loaded:
     st.warning("Please select and load a data source from the 🏠 Home page first.")
     st.stop()
 
-# Get the dataframe and models from session state
 df = st.session_state.df_enhanced
-models = st.session_state.models
+
+# --- Data Cleaning ---
+for col in df.columns:
+    if df[col].dtype == 'object' and col not in ['Player_ID', 'Team', 'Match_ID', 'Game_ID', 'Game_Outcome', 'Player_Role']:
+        if '%' in str(df[col].iloc[0]):
+            df[col] = df[col].str.replace('#DIV/0!', '0', regex=False)
+            df[col] = pd.to_numeric(df[col].str.replace('%', '', regex=False), errors='coerce').fillna(0) / 100.0
+        else:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
 # --- Page Content ---
-st.header("Advanced Analytics")
-st.info(f"Analyzing data from: **{st.session_state.source_name}**")
+st.header("🔬 Advanced Analytics")
+st.info(f"Analyzing detailed situational data from: **{st.session_state.source_name}**")
 
-tab1, tab2 = st.tabs(["Player Specialization", "Statistical Correlation"])
+tab1, tab2 = st.tabs(["Situational Specialization", "Key Performance Correlators"])
 
 with tab1:
     st.subheader(
-        "Player Specialization Analysis",
-        help="""
-        This analysis identifies players with standout skills compared to the league average.
-
-        - **Heatmap:** Shows a "Specialization Score". A score of **1.0** is exactly league average. A score of **2.0** means the player is twice as good as the average in that specific skill.
-        
-        - **Top Specialists:** The tables highlight the top 5 players for key aggregated skills like overall defense, offense, and game impact.
-        """
+        "Player Situational Specialization",
+        help="This analysis identifies players with standout skills in specific situations compared to the league average."
     )
-
-    # --- START OF UPDATED BLOCK ---
-    # 1. Call the refactored function to get the analysis objects (figure and DataFrames)
-    heatmap_fig, df_def, df_off, df_kd = utils.create_specialization_analysis(df)
-
-    # 2. Render the objects using Streamlit commands here on the page
-    if heatmap_fig:
-        st.plotly_chart(heatmap_fig, width='stretch')
-
-    st.subheader("Top Specialists by Key Skill")
-    col1, col2, col3 = st.columns(3)
     
-    with col1:
-        st.write("🛡️ **Top Defensive Players**")
-        st.dataframe(df_def[['Defensive_Rating']].style.format("{:.2f}x Avg").background_gradient(cmap='Blues'))
+    spec_stats = [
+        'Hits_Singles', 'Hits_Multi', 'Hits_Counters',
+        'Dodges_Singles', 'Dodges_Multi', 'Dodges_Counters',
+        'Blocks_Singles', 'Blocks_Multi', 'Blocks_Counters',
+        'Survivability_Singles', 'Survivability_Multi', 'Survivability_Counters'
+    ]
+    existing_spec_stats = [col for col in spec_stats if col in df.columns]
     
-    with col2:
-        st.write("🎯 **Top Offensive Players**")
-        st.dataframe(df_off[['Offensive_Rating']].style.format("{:.2f}x Avg").background_gradient(cmap='Reds'))
-    
-    with col3:
-        st.write("⚡ **High-Impact Players (K/D Ratio)**")
-        st.dataframe(df_kd[['K/D_Ratio']].style.format("{:.2f}x Avg").background_gradient(cmap='Purples'))
-    # --- END OF UPDATED BLOCK ---
-
+    if not existing_spec_stats:
+        st.warning("No situational data available for specialization analysis.")
+    else:
+        player_avg_stats = df.groupby('Player_ID')[existing_spec_stats].mean()
+        league_avg = player_avg_stats.mean()
+        specialization = player_avg_stats / (league_avg + 1e-6) # Add epsilon to avoid division by zero
+        
+        # Select top 20 players with the most variance in their specialization
+        top_specialized_players = specialization.std(axis=1).nlargest(20).index
+        specialization_subset = specialization.loc[top_specialized_players]
+        
+        fig = px.imshow(
+            specialization_subset,
+            text_auto=".2f",
+            aspect="auto",
+            color_continuous_scale='Viridis',
+            labels=dict(x="Situation", y="Player", color="Specialization (x League Avg)"),
+            title="<b>Player Specialization Heatmap (vs. League Average)</b>"
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 with tab2:
-    st.subheader("Statistical Correlations")
-    st.write("Understand which individual statistics have the strongest relationship with the `Overall_Performance` score.")
-
-    numeric_cols = [
-        'Hits', 'Throws', 'Dodges', 'Catches', 'Blocks',
-        'Hit_Accuracy', 'Defensive_Efficiency', 'Offensive_Rating', 'Defensive_Rating',
-        'Overall_Performance'
+    st.subheader(
+        "Key Performance Correlators",
+        help="This analysis identifies which specific situational stats have the strongest relationship with a player's overall performance score."
+    )
+    
+    corr_cols = [
+        'Hits_Singles', 'Hits_Multi', 'Hits_Counters',
+        'Dodges_Singles', 'Dodges_Multi', 'Dodges_Counters',
+        'Blocks_Singles', 'Blocks_Multi', 'Blocks_Counters',
+        'Survivability_Singles', 'Survivability_Multi', 'Survivability_Counters',
+        'Catches_Attempted', 'K/D_Ratio', 'Overall_Performance'
     ]
     
-    existing_numeric_cols = [col for col in numeric_cols if col in df.columns]
-    
-    if 'Overall_Performance' in df.columns:
-        performance_corr = df[existing_numeric_cols].corr()['Overall_Performance'].abs().sort_values(ascending=False).drop('Overall_Performance').head(5)
+    existing_corr_cols = [col for col in corr_cols if col in df.columns]
+
+    if 'Overall_Performance' in existing_corr_cols and len(existing_corr_cols) > 1:
+        performance_corr = df[existing_corr_cols].corr()['Overall_Performance'].abs().sort_values(ascending=False).drop('Overall_Performance').head(10)
         
         if not performance_corr.empty:
-            corr_df = pd.DataFrame({
-                'Metric': performance_corr.index,
-                'Correlation': performance_corr.values
-            })
-            fig = px.bar(corr_df, x='Correlation', y='Metric',
-                         title='Top 5 Metrics Correlated with Overall Performance',
-                         color='Correlation', color_continuous_scale='plasma',
-                         text_auto='.2f')
+            corr_df = pd.DataFrame({'Metric': performance_corr.index, 'Correlation': performance_corr.values})
+            fig = px.bar(
+                corr_df, x='Correlation', y='Metric',
+                title='<b>Top 10 Situational Metrics Correlated with Performance</b>',
+                color='Correlation', color_continuous_scale='plasma', text_auto='.2f'
+            )
             fig.update_layout(yaxis={'categoryorder': 'total ascending'})
-            # UPDATED: Replaced deprecated parameter with the modern one
-            st.plotly_chart(fig, width='stretch') 
-            st.info("💡 A higher correlation value means that a change in that metric is more likely to result in a change in the player's overall performance score.")
+            st.plotly_chart(fig, use_container_width=True)
+            st.info("💡 A higher correlation suggests that excelling in this specific situation is a strong indicator of a high overall performance score.")
         else:
-            st.warning("Could not calculate correlations. The dataset might be too small or lack variation.")
+            st.warning("Could not calculate correlations.")
     else:
-        st.warning("The 'Overall_Performance' column is not available, so correlations cannot be calculated.")
+        st.warning("Not enough situational data or the 'Overall_Performance' column is missing.")
