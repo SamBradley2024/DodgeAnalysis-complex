@@ -10,45 +10,35 @@ if 'data_loaded' not in st.session_state or not st.session_state.data_loaded:
     st.stop()
 
 df = st.session_state.df_enhanced
-models = st.session_state.models
 
 # --- Page Content ---
 st.header("🧑‍🏫 Coaching Corner")
-st.info(f"Generating specific, data-driven advice from: **{st.session_state.source_name}**")
+st.info(f"Generating advanced, data-driven advice from: **{st.session_state.source_name}**")
 st.markdown("---")
 
-coach_mode = st.radio("Select Coaching Mode", ["Player Coaching", "Team Coaching"], horizontal=True)
+player_list = sorted(df['Player_ID'].unique())
+selected_player = st.selectbox("Select a Player to Coach", player_list)
 
-if coach_mode == "Player Coaching":
-    player_list = sorted(df['Player_ID'].unique())
-    if not player_list:
-        st.warning("No players found to coach.")
-        st.stop()
-        
-    selected_player = st.selectbox("Select a Player to Coach", player_list)
-    if selected_player:
-        # This function now generates a more detailed report in utils.py
-        report, fig = utils.generate_player_coaching_report(df, selected_player)
-        
-        st.markdown('<div class="insight-box">', unsafe_allow_html=True)
-        for line in report:
+if selected_player:
+    # This single function call now generates the entire advanced report
+    report_strengths, report_weaknesses, fig = utils.generate_advanced_coaching_report(df, selected_player)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("✅ Top Strengths")
+        st.markdown('<div class="insight-box" style="border-left-color: #2ca02c;">', unsafe_allow_html=True)
+        for line in report_strengths:
             st.markdown(line)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        if fig:
-            st.plotly_chart(fig, use_container_width=True)
-
-elif coach_mode == "Team Coaching":
-    team_list = sorted(df['Team'].unique())
-    if not team_list:
-        st.warning("No teams found to coach.")
-        st.stop()
-        
-    selected_team = st.selectbox("Select a Team to Coach", team_list)
-    if selected_team:
-        report = utils.generate_team_coaching_report(df, selected_team)
-        
-        st.markdown('<div class="insight-box">', unsafe_allow_html=True)
-        for line in report:
+    with col2:
+        st.subheader("⚠️ Areas for Improvement")
+        st.markdown('<div class="warning-box" style="border-left-color: #d62728;">', unsafe_allow_html=True)
+        for line in report_weaknesses:
             st.markdown(line)
         st.markdown('</div>', unsafe_allow_html=True)
+    
+    if fig:
+        st.subheader("Player Percentile Rankings vs. League Average")
+        st.plotly_chart(fig, use_container_width=True)
+

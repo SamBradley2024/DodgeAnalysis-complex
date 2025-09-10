@@ -624,60 +624,78 @@ def create_specialization_analysis(df):
     
     return fig, top_defensive, top_offensive, top_kd
 
-def generate_player_coaching_report(df, player_id):
-    player_data = df[df['Player_ID'] == player_id]
-    if player_data.empty:
-        return ["No data for this player."], None
-
-    player_avg_stats = player_data.mean(numeric_only=True)
+def generate_advanced_coaching_report(df, player_id):
+    """
+    Generates a highly detailed coaching report by comparing all player stats
+    against league percentiles and identifying top strengths and weaknesses.
+    """
+    player_stats = df[df['Player_ID'] == player_id].iloc[0]
     
-    if 'Player_Role' not in player_data.columns or player_data['Player_Role'].isnull().all():
-        player_role = "N/A"
-        role_avg_stats = pd.Series()
-    else:
-        player_role = player_data['Player_Role'].iloc[0]
-        role_avg_stats = df[df['Player_Role'] == player_role].mean(numeric_only=True)
-
-    league_avg_stats = df.mean(numeric_only=True)
-    stats_to_compare = ['Hits', 'Throws', 'Catches', 'Dodges', 'Hit_Accuracy', 'Defensive_Efficiency', 'K/D_Ratio']
+    # Define all stats we want to analyze
+    stats_to_analyze = [
+        'Overall_Performance', 'K/D_Ratio', 'Hits', 'Throws', 'Catches', 'Dodges', 'Blocks',
+        'Hits_Singles', 'Throws_Singles', 'Hits_Multi', 'Throws_Multi', 'Hits_Counters',
+        'Dodges_Singles', 'Dodges_Multi', 'Survivability_Singles', 'Survivability_Multi'
+    ]
     
-    role_weaknesses = {}
-    if not role_avg_stats.empty:
-        role_weaknesses = {stat: (player_avg_stats.get(stat, 0) - role_avg_stats.get(stat, 0)) / (role_avg_stats.get(stat, 0) + 1e-6) for stat in stats_to_compare}
-        role_weaknesses = {k: v for k, v in role_weaknesses.items() if v < -0.1}
+    # Filter out stats that don't exist in the dataframe
+    existing_stats = [s for s in stats_to_analyze if s in df.columns]
 
-    overall_weaknesses = {stat: (player_avg_stats.get(stat, 0) - league_avg_stats.get(stat, 0)) / (league_avg_stats.get(stat, 0) + 1e-6) for stat in stats_to_compare}
-    overall_weaknesses = {k: v for k, v in overall_weaknesses.items() if v < -0.1}
-
-    report = [f"### Coaching Focus for {player_id} ({player_role})"]
-    advice_map = {
-        'Hit_Accuracy': "🎯 **Suggestion**: Focus on throwing drills.",
-        'Defensive_Efficiency': "🙌 **Suggestion**: Improve decision-making when targeted.",
-        'Catches': "🛡️ **Suggestion**: Improve positioning and anticipation.",
-        'Dodges': "🏃 **Suggestion**: Enhance agility and footwork.",
-        'Hits': "💥 **Suggestion**: Be more aggressive offensively.",
-        'K/D_Ratio': "⚡ **Suggestion**: Focus on survivability."
-    }
-    if not role_weaknesses and not overall_weaknesses:
-        report.append("✅ **Well-Rounded Performer**: This player is performing at or above average.")
-    if role_weaknesses:
-        stat = min(role_weaknesses, key=role_weaknesses.get)
-        report.append(f"**Role-Specific Weakness**: **{stat}**.")
-        report.append(advice_map.get(stat))
-    if overall_weaknesses:
-        stat = min(overall_weaknesses, key=overall_weaknesses.get)
-        report.append(f"**Overall Weakness**: **{stat}**.")
-        if not role_weaknesses or stat != min(role_weaknesses, key=role_weaknesses.get):
-             report.append(advice_map.get(stat))
+    # Calculate percentile ranks for the selected player
+    player_percentiles = df[existing_stats].rank(pct=True).loc[player_stats.name]
     
+    # Calculate difference from the average (50th percentile)
+    percentile_diff = (player_percentiles - 0.5)
+    
+    # --- Identify Strengths and Weaknesses ---
+    top_strengths = percentile_diff.nlargest(3)
+    top_weaknesses = percentile_diff.nsmallest(3)
+    
+    # --- Generate Text Reports ---
+    strengths_report = []
+    for stat, value in top_strengths.items():
+        if value > 0: # Only report if it's actually a strength
+            player_value = player_stats[stat]
+            league_avg = df[stat].mean()
+            formatted_stat = stat.replace('_', ' ').title()
+            strengths_report.append(f"**{formatted_stat}:** Player is in the **{player_percentiles[stat]:.0%}** percentile. (Value: {player_value:.2f}, League Avg: {league_avg:.2f})")
+
+    weaknesses_report = []
+    for stat, value in top_weaknesses.items():
+        if value < 0: # Only report if it's actually a weakness
+            player_value = player_stats[stat]
+            league_avg = df[stat].mean()
+            formatted_stat = stat.replace('_', ' ').title()
+            weaknesses_report.append(f"**{formatted_stat}:** Player is in the **{player_percentiles[stat]:.0%}** percentile. (Value: {player_value:.2f}, League Avg: {league_avg:.2f})")
+
+    if not strengths_report: strengths_report.append("No significant strengths identified.")
+    if not weaknesses_report: weaknesses_report.append("No significant weaknesses identified.")
+
+    # --- Create Radar Chart Visualization ---
     fig = go.Figure()
-    fig.add_trace(go.Bar(name=f'{player_id} (You)', x=stats_to_compare, y=[player_avg_stats.get(s, 0) for s in stats_to_compare], marker_color='#FF6B6B'))
-    if not role_avg_stats.empty:
-        fig.add_trace(go.Bar(name='Role Average', x=stats_to_compare, y=[role_avg_stats.get(s, 0) for s in stats_to_compare], marker_color='#4ECDC4'))
-    fig.add_trace(go.Bar(name='League Average', x=stats_to_compare, y=[league_avg_stats.get(s, 0) for s in stats_to_compare], marker_color='#45B7D1'))
-    
-    fig.update_layout(barmode='group', title_text='Performance Comparison', xaxis_title="Statistic", yaxis_title="Average Value")
-    return report, fig
+    fig.add_trace(go.Scatterpolar(
+        r=player_percentiles.values * 100,
+        theta=player_percentiles.index.str.replace('_', ' '),
+        fill='toself',
+        name=f'{player_id} Percentile Rank'
+    ))
+    fig.add_trace(go.Scatterpolar(
+        r=[50] * len(player_percentiles), # 50th percentile line
+        theta=player_percentiles.index.str.replace('_', ' '),
+        mode='lines',
+        name='League Average (50th Percentile)',
+        line=dict(dash='dash', color='grey')
+    ))
+    fig.update_layout(
+      polar=dict(
+        radialaxis=dict(
+          visible=True,
+          range=[0, 100]
+        )),
+      showlegend=True
+    )
+
+    return strengths_report, weaknesses_report, fig
 
 def generate_team_coaching_report(df, team_id):
     team_data = df[df['Team'] == team_id]
