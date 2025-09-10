@@ -18,7 +18,7 @@ st.header("🏆 League-Wide Analysis")
 st.info(f"Analyzing {df['Game_ID'].nunique()} games from: **{st.session_state.source_name}**")
 
 # --- FIXED: Player Summary Aggregation ---
-# This block correctly calculates career averages for all players.
+# This block now correctly includes all necessary columns to prevent KeyErrors.
 player_summary = df.groupby('Player_ID').agg(
     Overall_Performance=('Overall_Performance', 'mean'),
     K_D_Ratio=('K_D_Ratio', 'mean'),
@@ -27,9 +27,11 @@ player_summary = df.groupby('Player_ID').agg(
     Throws=('Throws', 'mean'),
     Catches=('Catches', 'mean'),
     Dodges=('Dodges', 'mean'),
+    Offensive_Rating=('Offensive_Rating', 'mean'), # Added for bubble chart
+    Defensive_Rating=('Defensive_Rating', 'mean'), # Added for bubble chart
     Team=('Team', 'first'),
     Player_Role=('Player_Role', 'first')
-).reset_index() # .reset_index() is crucial to fix the chart bug
+).reset_index()
 
 st.markdown("---")
 

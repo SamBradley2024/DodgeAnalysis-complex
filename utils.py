@@ -179,6 +179,7 @@ def generate_advanced_coaching_report(df, player_id):
     player_role = player_games['Player_Role'].iloc[0]
     role_df = df[df['Player_Role'] == player_role]
 
+    # --- FIXED: This check is now safer and prevents the TypeError ---
     if role_df['Player_ID'].nunique() > 1:
         role_avg_stats = role_df[existing_stats].mean()
         fig_role = go.Figure()
@@ -187,6 +188,8 @@ def generate_advanced_coaching_report(df, player_id):
         fig_role.update_layout(barmode='group', title_text=f'<b>Player Average Stats vs. Average "{player_role}"</b>', height=500)
 
     return strengths_report, weaknesses_report, fig_league, fig_role
+
+
 
 def create_game_level_features(df):
     """Transforms player-level data into game-level data for win prediction."""
