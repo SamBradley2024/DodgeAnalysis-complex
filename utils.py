@@ -94,52 +94,55 @@ def get_worksheet_names():
 def load_and_process_google_sheet(worksheet_name):
     """
     Loads and processes a worksheet from Google Sheets with the new, pivoted format.
-    This is a more robust version that builds the DataFrame directly.
+    This is a more robust version that builds the DataFrame directly and correctly handles all columns.
     """
     try:
         client = get_gspread_client()
         worksheet = client.open("Dodgeball App Data").worksheet(worksheet_name)
         
-        # Get all values as a list of lists
         data = worksheet.get_all_values()
         
         if not data or len(data) < 2:
             st.error(f"Worksheet '{worksheet_name}' is empty or has no data rows.")
             return None
 
-        # The first row contains headers (team info and player names)
         header_row = data[0]
         player_names = header_row[1:]
-        
-        # Subsequent rows contain the metrics and values
         metric_rows = data[1:]
         
-        # Build a dictionary to construct the DataFrame
-        # This is a more stable method than transposing
         processed_data = {'Player_ID': player_names}
         for row in metric_rows:
             metric_name = row[0]
             metric_values = row[1:]
-            # Ensure each metric has a value for each player
             if len(metric_values) == len(player_names):
                 processed_data[metric_name] = metric_values
         
         df = pd.DataFrame(processed_data)
 
-        # --- (The rest of the logic remains the same) ---
+        # --- Corrected Renaming and Column Handling ---
+        rename_map = {
+            'Overall Hits': 'Hits',
+            'Overall Throws': 'Throws',
+            'Catches made': 'Catches',
+            'Overall Outs': 'Times_Eliminated',
+            'Out (caught)': 'Caught_Out',
+            'Out (overall hits)': 'Hit_Out',
+            'Dodges': 'Dodges', # Ensure direct mapping
+            'Blocks': 'Blocks'  # Ensure direct mapping
+        }
+        df = df.rename(columns=rename_map)
+
         team_name = header_row[0].split(' vs ')[0]
         df['Team'] = team_name
         df['Match_ID'] = 'M1'
         df['Game_ID'] = 'G1'
-        df['Game_Outcome'] = 'Win'  # Default value
+        df['Game_Outcome'] = 'Win'
 
-        df = df.rename(columns={
-            'Overall Hits': 'Hits', 'Overall Throws': 'Throws', 'Catches made': 'Catches',
-            'Overall Outs': 'Times_Eliminated', 'Out (caught)': 'Caught_Out', 'Out (overall hits)': 'Hit_Out'
-        })
-        
-        df['Dodges'] = 0
-        df['Blocks'] = 0
+        # --- Corrected Logic: Only add columns if they are truly missing ---
+        expected_cols = ['Dodges', 'Blocks']
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = 0 # Add as 0 only if not found in the source file
         
         return df
     except Exception as e:
@@ -149,24 +152,19 @@ def load_and_process_google_sheet(worksheet_name):
 def load_and_process_custom_csv(uploaded_file):
     """
     Loads and processes a custom-formatted CSV file into a tidy DataFrame.
-    This version is more robust and mirrors the Google Sheet logic.
+    This version mirrors the corrected Google Sheet logic.
     """
     try:
-        # Read the raw data without assuming a header or index
         df_raw = pd.read_csv(uploaded_file, header=None)
         
         if df_raw.empty or len(df_raw) < 2:
             st.error("The uploaded CSV file is empty or has no data rows.")
             return None
 
-        # The first row contains headers (team info and player names)
         header_row = df_raw.iloc[0].tolist()
         player_names = header_row[1:]
-        
-        # Subsequent rows contain the metrics and values
         metric_rows = df_raw.iloc[1:].values.tolist()
 
-        # Build a dictionary to construct the DataFrame
         processed_data = {'Player_ID': player_names}
         for row in metric_rows:
             metric_name = row[0]
@@ -176,26 +174,35 @@ def load_and_process_custom_csv(uploaded_file):
         
         df = pd.DataFrame(processed_data)
 
-        # --- (The rest of the logic is the same as the Google Sheet function) ---
+        # --- Corrected Renaming and Column Handling ---
+        rename_map = {
+            'Overall Hits': 'Hits',
+            'Overall Throws': 'Throws',
+            'Catches made': 'Catches',
+            'Overall Outs': 'Times_Eliminated',
+            'Out (caught)': 'Caught_Out',
+            'Out (overall hits)': 'Hit_Out',
+            'Dodges (overall)': 'Dodges', 
+            'Blocks (overall)': 'Blocks'  
+        }
+        df = df.rename(columns=rename_map)
+
         team_name = header_row[0].split(' vs ')[0]
         df['Team'] = team_name
         df['Match_ID'] = 'M1'
         df['Game_ID'] = 'G1'
-        df['Game_Outcome'] = 'Win'  # Default value
+        df['Game_Outcome'] = 'Win'
 
-        df = df.rename(columns={
-            'Overall Hits': 'Hits', 'Overall Throws': 'Throws', 'Catches made': 'Catches',
-            'Overall Outs': 'Times_Eliminated', 'Out (caught)': 'Caught_Out', 'Out (overall hits)': 'Hit_Out'
-        })
-        
-        df['Dodges'] = 0
-        df['Blocks'] = 0
-        
+        # --- Corrected Logic: Only add columns if they are truly missing ---
+        expected_cols = ['Dodges', 'Blocks']
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = 0 # Add as 0 only if not found in the source file
+                
         return df
     except Exception as e:
         st.error(f"Error processing the CSV file: {e}")
         return None
-
 
 def enhance_dataframe(df):
     """Takes a raw dataframe and adds all calculated metrics and features."""
