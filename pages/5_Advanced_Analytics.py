@@ -26,7 +26,7 @@ for col in df.columns:
 st.header("🔬 Advanced Analytics")
 st.info(f"Analyzing detailed situational data from: **{st.session_state.source_name}**")
 
-tab1, tab2 = st.tabs(["Situational Specialization", "Key Performance Correlators"])
+tab1, tab2, tab3 = st.tabs(["Situational Specialization", "Key Performance Correlators", "Generated Strategic & Situational Insights"])
 
 with tab1:
     st.subheader(
@@ -96,3 +96,18 @@ with tab2:
             st.warning("Could not calculate correlations.")
     else:
         st.warning("Not enough situational data or the 'Overall_Performance' column is missing.")
+
+with tab3:
+    st.subheader(
+        "Generated Strategic & Situational Insights",
+        help="This section displays automated insights discovered by analyzing the entire dataset. It identifies top situational performers and potential strategic tendencies."
+    )
+
+    # This function is now updated in utils.py to find situational patterns
+    insights = utils.generate_situational_insights(df)
+
+    if not insights:
+        st.warning("Could not generate any advanced insights. The dataset may be too small or lack sufficient variation for the AI models to find patterns.")
+    else:
+        for insight in insights:
+            st.markdown(f'<div class="insight-box">{insight}</div>', unsafe_allow_html=True)
