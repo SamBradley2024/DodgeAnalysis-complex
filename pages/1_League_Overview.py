@@ -13,60 +13,60 @@ if 'data_loaded' not in st.session_state or not st.session_state.data_loaded:
 
 df = st.session_state.df_enhanced
 
-# --- Data Cleaning ---
-for col in df.columns:
-    if df[col].dtype == 'object' and col not in ['Player_ID', 'Team', 'Match_ID', 'Game_ID', 'Game_Outcome', 'Player_Role']:
-        df[col] = pd.to_numeric(df[col].str.replace('%', '', regex=False).str.replace('#DIV/0!', '0', regex=False), errors='coerce').fillna(0)
-        if '%' in str(df[col].iloc[0]):
-             df[col] = df[col] / 100.0
-
 # --- Page Content ---
-st.header("🏆 Visual League Overview")
-st.info(f"Analyzing detailed situational data from: **{st.session_state.source_name}**")
+st.header("🏆 League-Wide Analysis")
+st.info(f"Analyzing {df['Game_ID'].nunique()} games from: **{st.session_state.source_name}**")
+
+# --- FIXED: Player Summary Aggregation ---
+# This block correctly calculates career averages for all players.
+player_summary = df.groupby('Player_ID').agg(
+    Overall_Performance=('Overall_Performance', 'mean'),
+    K_D_Ratio=('K_D_Ratio', 'mean'),
+    Hit_Accuracy=('Hit_Accuracy', 'mean'),
+    Hits=('Hits', 'mean'),
+    Throws=('Throws', 'mean'),
+    Catches=('Catches', 'mean'),
+    Dodges=('Dodges', 'mean'),
+    Team=('Team', 'first'),
+    Player_Role=('Player_Role', 'first')
+).reset_index() # .reset_index() is crucial to fix the chart bug
+
 st.markdown("---")
 
-col1, col2 = st.columns(2)
+# --- Dynamic Leaderboard ---
+st.subheader("Dynamic Leaderboard")
+leaderboard_metrics = [
+    'Overall_Performance', 'K_D_Ratio', 'Hit_Accuracy', 
+    'Hits', 'Throws', 'Catches', 'Dodges'
+]
+selected_metric = st.selectbox("Select a metric for the leaderboard:", leaderboard_metrics)
 
-with col1:
-    # --- NEW: Dynamic Leaderboard Chart ---
-    st.subheader("Dynamic Leaderboard")
-    metrics_list = [
-        'Overall_Performance', 'K/D_Ratio', 'Hits', 'Catches', 'Dodges', 'Blocks',
-        'Hits_Singles', 'Hits_Multi', 'Throws_Singles', 'Throws_Multi'
-    ]
-    selected_metric = st.selectbox("Select a metric to view leaders:", metrics_list)
-    
-    if selected_metric:
-        leaderboard_df = df[['Player_ID', 'Team', selected_metric]].sort_values(by=selected_metric, ascending=False).head(10)
-        
-        fig = px.bar(
-            leaderboard_df,
-            x=selected_metric,
-            y='Player_ID',
-            orientation='h',
-            color=selected_metric,
-            color_continuous_scale='plasma',
-            text_auto=True,
-            title=f"Top 10 Players by {selected_metric.replace('_', ' ')}"
-        )
-        fig.update_layout(yaxis={'categoryorder':'total ascending'})
-        st.plotly_chart(fig, use_container_width=True)
-
-with col2:
-    # --- NEW: Offensive vs. Defensive Rating Scatter Plot ---
-    st.subheader("Offensive vs. Defensive Styles")
-    
-    fig2 = px.scatter(
-        df,
-        x="Offensive_Rating",
-        y="Defensive_Rating",
-        color="Team",
-        hover_name="Player_ID",
-        size='Overall_Performance',
-        size_max=20,
-        title="Player Styles: Offensive vs. Defensive Rating"
+if selected_metric:
+    top_10 = player_summary.sort_values(selected_metric, ascending=False).head(10)
+    fig = px.bar(
+        top_10,
+        x='Player_ID',
+        y=selected_metric,
+        color='Team',
+        title=f"Top 10 Players by Average {selected_metric.replace('_', ' ')}",
+        text_auto='.2f'
     )
-    fig2.add_hline(y=df['Defensive_Rating'].mean(), line_dash="dot", annotation_text="League Avg. Defense")
-    fig2.add_vline(x=df['Offensive_Rating'].mean(), line_dash="dot", annotation_text="League Avg. Offense")
-    st.plotly_chart(fig2, use_container_width=True)
+    fig.update_layout(xaxis={'categoryorder':'total descending'})
+    st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("---")
+
+# --- Offense vs. Defense Bubble Chart ---
+st.subheader("Player Profile: Offense vs. Defense")
+fig2 = px.scatter(
+    player_summary,
+    x="Offensive_Rating",
+    y="Defensive_Rating",
+    size="Overall_Performance",
+    color="Player_Role",
+    hover_name="Player_ID",
+    size_max=40,
+    title="League Player Profiles"
+)
+st.plotly_chart(fig2, use_container_width=True)
 
