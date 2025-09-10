@@ -32,37 +32,25 @@ with col1:
     st.subheader("🔗 Option 1: Use Live Google Sheet")
     st.write("Connect to the 'Dodgeball App Data' Google Sheet. Any edits you make to the sheet will be reflected in the app.")
     
-    # Check if worksheet names can be fetched
     sheet_names = utils.get_worksheet_names()
-    
-    if not sheet_names:
-        st.error("Could not fetch worksheet names from Google Sheets. Please check your app's secrets and permissions.")
-    else:
+    if sheet_names:
         selected_sheet = st.selectbox("Select a worksheet", sheet_names)
 
         if st.button("Load from Google Sheet"):
-            # Use a spinner to show that work is being done
-            with st.spinner("Connecting to Google Sheets and processing data..."):
+            # --- THIS IS THE FIX ---
+            # Now calling the new function that understands the pivoted data format.
+            raw_df = utils.load_and_process_google_sheet(selected_sheet)
+            
+            if raw_df is not None:
+                st.cache_data.clear()
+                st.cache_resource.clear()
                 
-                # Call the function to get the data
-                raw_df = utils.load_and_process_google_sheet(selected_sheet)
-                
-                # This is the new, more detailed check
-                if raw_df is not None and not raw_df.empty:
-                    st.info("✅ Dataframe received successfully. Initializing the application...")
-                    
-                    # Clear the cache to ensure new data is loaded
-                    st.cache_data.clear()
-                    st.cache_resource.clear()
-                    
-                    # Initialize the app with the newly processed data
-                    utils.initialize_app(raw_df, f"Google Sheet: {selected_sheet}")
-                    st.rerun()
-                else:
-                    # This error message will now definitely appear if the process fails
-                    st.error("❌ Data loading failed. The processing function did not return a valid dataframe.")
-                    st.warning("This is often due to an error connecting to Google Sheets (check your `st.secrets` configuration) or an issue with the data format in that specific sheet.")
-
+                utils.initialize_app(raw_df, f"Google Sheet: {selected_sheet}")
+                st.rerun()
+            else:
+                st.error("Failed to load and process data from the selected sheet.")
+    else:
+        st.warning("Could not retrieve worksheet names. Check Google Sheets connection.")
 
 # --- Option 2: CSV Upload ---
 with col2:
@@ -72,12 +60,15 @@ with col2:
     uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
 
     if uploaded_file is not None:
-        # --- MODIFIED ---
-        # Use the new function to process the custom CSV format
+        # --- THIS IS THE FIX ---
+        # Now calling the new function for processing the custom CSV format.
         raw_df = utils.load_and_process_custom_csv(uploaded_file)
+        
         if raw_df is not None:
             st.cache_data.clear()
             st.cache_resource.clear()
-            
-            utils.initialize_app(raw_df, f"CSV: {uploaded_file.name}")
+
+            utils.initialize_app(raw_df, f"Uploaded File: {uploaded_file.name}")
             st.rerun()
+        else:
+            st.error("Failed to load and process the uploaded CSV file.")
