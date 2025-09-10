@@ -28,7 +28,7 @@ if selected_game:
     
     st.subheader(f"Player Stats for: {selected_game}")
 
-    # --- NEW: Analysis Mode Selection ---
+    # --- Analysis Mode Selection ---
     view_mode = st.radio(
         "Select View Mode:",
         ["Simple View", "In-depth View"],
@@ -44,20 +44,23 @@ if selected_game:
         ]
         st.info("Showing key performance indicators for each player in this game.")
     else: # In-depth View
-        # Get all numeric columns, but exclude some internal/less useful ones
         all_numeric_cols = sorted([col for col in game_df.columns if pd.api.types.is_numeric_dtype(game_df[col])])
         cols_to_exclude = ['Role_Cluster'] 
         display_cols = ['Player_ID', 'Team'] + [col for col in all_numeric_cols if col not in cols_to_exclude]
         st.info("Showing all available statistics for each player in this game.")
 
-    # Filter out any columns that might not exist in the dataframe
     display_cols = [col for col in display_cols if col in game_df.columns]
+    
+    # --- MODIFIED: Rotated Table Display ---
+    # Prepare the DataFrame for transposition
+    table_df = game_df[display_cols].set_index('Player_ID')
+    
+    # Transpose the DataFrame so players become columns
+    transposed_df = table_df.T
+    
+    # Display the rotated table
+    st.dataframe(transposed_df, use_container_width=True)
 
-    # --- Display Table ---
-    st.dataframe(
-        game_df[display_cols].sort_values('Overall_Performance', ascending=False).set_index('Player_ID'),
-        use_container_width=True
-    )
 
     st.markdown("---")
     st.subheader("Performance vs. Career Average")
@@ -67,19 +70,13 @@ if selected_game:
     career_df = df[df['Game_ID'] != selected_game]
 
     if not career_df.empty:
-        # Calculate Career Averages for Comparison
         player_career_avg = career_df.groupby('Player_ID')['Overall_Performance'].mean().reset_index()
         player_career_avg = player_career_avg.rename(columns={'Overall_Performance': 'Career_Avg_Performance'})
 
-        # Merge career averages into the game data
         game_summary = game_df.merge(player_career_avg, on='Player_ID', how='left')
-        # If a player has no other games, their 'career avg' is their performance in this game, so the difference is 0.
         game_summary['Career_Avg_Performance'] = game_summary['Career_Avg_Performance'].fillna(game_summary['Overall_Performance'])
-        
-        # Calculate performance vs career average
         game_summary['Perf_vs_Avg'] = game_summary['Overall_Performance'] - game_summary['Career_Avg_Performance']
 
-        # Visual Comparison
         fig = px.bar(
             game_summary.sort_values('Perf_vs_Avg', ascending=False),
             x='Player_ID',
