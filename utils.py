@@ -50,19 +50,6 @@ def styled_metric(label, value, help_text=""):
 # --- Data Loading and Processing Functions ---
 
 @st.cache_data(ttl=300)
-def get_worksheet_names():
-    """Gets a list of all worksheet names from the Google Sheet."""
-    try:
-        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive.readonly"]
-        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
-        client = gspread.authorize(creds)
-        spreadsheet = client.open("Dodgeball App Data")
-        return [sheet.title for sheet in spreadsheet.worksheets()]
-    except Exception as e:
-        st.error(f"Could not retrieve worksheet names: {e}")
-        return ["Sheet1"]
-
-@st.cache_data(ttl=300)
 def load_from_google_sheet(worksheet_name):
     """Loads a DataFrame from a specific Google Sheet worksheet."""
     try:
@@ -79,51 +66,61 @@ def load_from_google_sheet(worksheet_name):
         st.error(f"Error reading from Google Sheets: {e}")
         return None
 
+@st.cache_resource(ttl=600)  # Cache for 10 minutes
+def get_gspread_client():
+    """Initializes and returns the gspread client."""
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    # Use Streamlit's secrets management for the credentials
+    creds_dict = st.secrets["gcp_service_account"]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    client = gspread.authorize(creds)
+    return client
+
+def get_worksheet_names():
+    """Fetches the names of all worksheets in the 'Dodgeball App Data' Google Sheet."""
+    try:
+        client = get_gspread_client()
+        spreadsheet = client.open("Dodgeball App Data")
+        return [sheet.title for sheet in spreadsheet.worksheets()]
+    except Exception as e:
+        st.error(f"Could not connect to Google Sheets. Please ensure you have set up your secrets correctly. Error: {e}")
+        return []
+
 def load_and_process_google_sheet(worksheet_name):
     """
     Loads and processes a worksheet from Google Sheets with the new, pivoted format.
     """
     try:
-        # Fetch the data from the specified worksheet
-        sheet = get_gspread_client().open("Dodgeball App Data").worksheet(worksheet_name)
-        data = sheet.get_all_values()
+        client = get_gspread_client()
+        spreadsheet = client.open("Dodgeball App Data")
+        worksheet = spreadsheet.worksheet(worksheet_name)
         
-        # Convert to a DataFrame
-        df = pd.DataFrame(data)
-
-        # --- (The following logic is the same as the CSV processing function) ---
-
-        # Extract team and player names
-        team_name = df.iloc[0, 0].split(' vs ')[0].replace('','')
-        player_names = df.iloc[0, 1:].tolist()
-
-        # Set the first column as the index and transpose the DataFrame
-        df.columns = df.iloc[0]
-        df = df[1:]
+        # Get all values, which gives a list of lists
+        data = worksheet.get_all_values()
+        
+        # Convert to a DataFrame, using the first row as the header
+        df = pd.DataFrame(data[1:], columns=data[0])
+        
+        # Set the first column (metrics) as the index and then transpose
         df = df.set_index(df.columns[0]).T
-        df.columns.name = None
-        df = df.reset_index(drop=True)
-
-        # Set the player names as the first column
-        df.iloc[0] = player_names
-        df = df.rename(columns={df.columns[0]: 'Player_ID'})
         
-        # Melt the DataFrame to a long format
-        id_vars = ['Player_ID']
-        value_vars = [col for col in df.columns if col not in id_vars]
-        df_melted = df.melt(id_vars=id_vars, value_vars=value_vars, var_name='Metric', value_name='Value')
-
-        # Pivot the table to have metrics as columns
-        df_pivot = df_melted.pivot(index='Player_ID', columns='Metric', values='Value').reset_index()
-
-        # Add team and dummy columns for compatibility
-        df_pivot['Team'] = team_name
-        df_pivot['Match_ID'] = 'M1'
-        df_pivot['Game_ID'] = 'G1'
-        df_pivot['Game_Outcome'] = 'Win' # Assuming a win for all players in this dataset
+        # Reset index to turn players from an index into a 'Player_ID' column
+        df = df.reset_index().rename(columns={'index': 'Player_ID'})
+        
+        # --- (The rest of the logic remains the same) ---
+        team_name = worksheet.cell(1, 1).value.split(' vs ')[0]
+        df['Team'] = team_name
+        df['Match_ID'] = 'M1'
+        df['Game_ID'] = 'G1'
+        df['Game_Outcome'] = 'Win'  # Default value
 
         # Rename columns to match the existing structure
-        df_pivot = df_pivot.rename(columns={
+        df = df.rename(columns={
             'Overall Hits': 'Hits',
             'Overall Throws': 'Throws',
             'Catches made': 'Catches',
@@ -133,51 +130,40 @@ def load_and_process_google_sheet(worksheet_name):
         })
         
         # Add missing columns with default values
-        df_pivot['Dodges'] = 0
-        df_pivot['Blocks'] = 0
+        df['Dodges'] = 0
+        df['Blocks'] = 0
         
-        return df_pivot
+        return df
     except Exception as e:
-        st.error(f"Error processing the Google Sheet: {e}")
+        st.error(f"Error processing the Google Sheet '{worksheet_name}': {e}")
         return None
 
 def load_and_process_custom_csv(uploaded_file):
     """
     Loads and processes a custom-formatted CSV file into a tidy DataFrame.
+    This version is more robust and avoids the 'setting an array element' error.
     """
     try:
-        # Read the raw data
-        df = pd.read_csv(uploaded_file, header=None)
+        # Read the CSV, setting the first row as the header and first column as the index
+        df = pd.read_csv(uploaded_file, header=0, index_col=0)
 
-        # Extract team and player names
-        team_name = df.iloc[0, 0].split(' vs ')[0].replace('','')
-        player_names = df.iloc[0, 1:].tolist()
-
-        # Set the first column as the index and transpose the DataFrame
-        df = df.set_index(0).T
-        df.columns.name = None
-        df = df.reset_index(drop=True)
-
-        # Set the player names as the first column
-        df.iloc[0] = player_names
-        df = df.rename(columns={df.columns[0]: 'Player_ID'})
+        # Extract the team name from the first column's header
+        team_name = df.columns[0].split(' vs ')[0]
         
-        # Melt the DataFrame to a long format
-        id_vars = ['Player_ID']
-        value_vars = [col for col in df.columns if col not in id_vars]
-        df_melted = df.melt(id_vars=id_vars, value_vars=value_vars, var_name='Metric', value_name='Value')
-
-        # Pivot the table to have metrics as columns
-        df_pivot = df_melted.pivot(index='Player_ID', columns='Metric', values='Value').reset_index()
-
-        # Add team and dummy columns for compatibility
-        df_pivot['Team'] = team_name
-        df_pivot['Match_ID'] = 'M1'
-        df_pivot['Game_ID'] = 'G1'
-        df_pivot['Game_Outcome'] = 'Win' # Assuming a win for all players in this dataset
+        # Transpose the DataFrame so players become rows
+        df = df.T
+        
+        # Reset index to turn players from an index into a 'Player_ID' column
+        df = df.reset_index().rename(columns={'index': 'Player_ID'})
+        
+        # --- (The rest of the logic is the same as the Google Sheet function) ---
+        df['Team'] = team_name
+        df['Match_ID'] = 'M1'
+        df['Game_ID'] = 'G1'
+        df['Game_Outcome'] = 'Win'  # Default value
 
         # Rename columns to match the existing structure
-        df_pivot = df_pivot.rename(columns={
+        df = df.rename(columns={
             'Overall Hits': 'Hits',
             'Overall Throws': 'Throws',
             'Catches made': 'Catches',
@@ -187,10 +173,10 @@ def load_and_process_custom_csv(uploaded_file):
         })
         
         # Add missing columns with default values
-        df_pivot['Dodges'] = 0
-        df_pivot['Blocks'] = 0
+        df['Dodges'] = 0
+        df['Blocks'] = 0
         
-        return df_pivot
+        return df
     except Exception as e:
         st.error(f"Error processing the CSV file: {e}")
         return None
