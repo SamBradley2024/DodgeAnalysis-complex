@@ -3,18 +3,16 @@ import pandas as pd
 import plotly.express as px
 import utils
 
-# --- Page Configuration and State Check ---
-st.set_page_config(page_title="Game Analysis", page_icon="🎲", layout="wide")
+st.set_page_config(page_title="Game Analysis", layout="wide")
 st.markdown(utils.load_css(), unsafe_allow_html=True)
 
 if 'data_loaded' not in st.session_state or not st.session_state.data_loaded:
-    st.warning("Please select and load a data source from the 🏠 Home page first.")
+    st.warning("Please load a data source from the Home page first.")
     st.stop()
 
 df = st.session_state.df_enhanced
 
-# --- Game Selection ---
-st.header("🎲 Single Game Analysis")
+st.header("Game Analysis")
 game_list = sorted(df['Game_ID'].unique())
 if not game_list:
     st.warning("No games found in the selected data source.")
@@ -51,14 +49,10 @@ if selected_game:
 
     display_cols = [col for col in display_cols if col in game_df.columns]
     
-    # --- MODIFIED: Rotated Table Display ---
-    # Prepare the DataFrame for transposition
     table_df = game_df[display_cols].set_index('Player_ID')
     
-    # Transpose the DataFrame so players become columns
     transposed_df = table_df.T
     
-    # Display the rotated table
     st.dataframe(transposed_df, use_container_width=True)
 
 

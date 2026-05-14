@@ -3,12 +3,11 @@ import pandas as pd
 import plotly.express as px
 import utils
 
-# --- Page Configuration and State Check ---
-st.set_page_config(page_title="Advanced Analytics", page_icon="🔬", layout="wide")
+st.set_page_config(page_title="Advanced Analytics", layout="wide")
 st.markdown(utils.load_css(), unsafe_allow_html=True)
 
 if 'data_loaded' not in st.session_state or not st.session_state.data_loaded:
-    st.warning("Please select and load a data source from the 🏠 Home page first.")
+    st.warning("Please load a data source from the Home page first.")
     st.stop()
 
 df = st.session_state.df_enhanced
@@ -22,8 +21,7 @@ for col in df.columns:
         else:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-# --- Page Content ---
-st.header("🔬 Advanced Analytics")
+st.header("Advanced Analytics")
 st.info(f"Analyzing detailed situational data from: **{st.session_state.source_name}**")
 
 tab1, tab2, tab3 = st.tabs(["Situational Specialization", "Key Performance Correlators", "Generated Strategic & Situational Insights"])
@@ -47,9 +45,8 @@ with tab1:
     else:
         player_avg_stats = df.groupby('Player_ID')[existing_spec_stats].mean()
         league_avg = player_avg_stats.mean()
-        specialization = player_avg_stats / (league_avg + 1e-6) # Add epsilon to avoid division by zero
+        specialization = player_avg_stats / (league_avg + 1e-6)
         
-        # Select top 20 players with the most variance in their specialization
         top_specialized_players = specialization.std(axis=1).nlargest(20).index
         specialization_subset = specialization.loc[top_specialized_players]
         
@@ -91,7 +88,7 @@ with tab2:
             )
             fig.update_layout(yaxis={'categoryorder': 'total ascending'})
             st.plotly_chart(fig, use_container_width=True)
-            st.info("💡 A higher correlation suggests that excelling in this specific situation is a strong indicator of a high overall performance score.")
+            st.info("Higher correlation suggests that this situation has a stronger relationship with overall performance.")
         else:
             st.warning("Could not calculate correlations.")
     else:
@@ -103,11 +100,10 @@ with tab3:
         help="This section displays automated insights discovered by analyzing the entire dataset. It identifies top situational performers and potential strategic tendencies."
     )
 
-    # This function is now updated in utils.py to find situational patterns
     insights = utils.generate_situational_insights(df)
 
     if not insights:
-        st.warning("Could not generate any advanced insights. The dataset may be too small or lack sufficient variation for the AI models to find patterns.")
+        st.warning("Could not generate insights. The dataset may be too small or too uniform to surface clear patterns.")
     else:
         for insight in insights:
             st.markdown(f'<div class="insight-box">{insight}</div>', unsafe_allow_html=True)

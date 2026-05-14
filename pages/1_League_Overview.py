@@ -3,22 +3,18 @@ import pandas as pd
 import plotly.express as px
 import utils
 
-# --- Page Configuration and State Check ---
-st.set_page_config(page_title="League Overview", page_icon="🏆", layout="wide")
+st.set_page_config(page_title="League Overview", layout="wide")
 st.markdown(utils.load_css(), unsafe_allow_html=True)
 
 if 'data_loaded' not in st.session_state or not st.session_state.data_loaded:
-    st.warning("Please select and load a data source from the 🏠 Home page first.")
+    st.warning("Please load a data source from the Home page first.")
     st.stop()
 
 df = st.session_state.df_enhanced
 
-# --- Page Content ---
-st.header("🏆 League-Wide Analysis")
+st.header("League Overview")
 st.info(f"Analyzing {df['Game_ID'].nunique()} games from: **{st.session_state.source_name}**")
 
-# --- FIXED: Player Summary Aggregation ---
-# This block now correctly includes all necessary columns to prevent KeyErrors.
 player_summary = df.groupby('Player_ID').agg(
     Overall_Performance=('Overall_Performance', 'mean'),
     K_D_Ratio=('K/D_Ratio', 'mean'),

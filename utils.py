@@ -179,7 +179,6 @@ def generate_advanced_coaching_report(df, player_id):
     player_role = player_games['Player_Role'].iloc[0]
     role_df = df[df['Player_Role'] == player_role]
 
-    # --- FIXED: This check is now safer and prevents the TypeError ---
     if role_df['Player_ID'].nunique() > 1:
         role_avg_stats = role_df[existing_stats].mean()
         fig_role = go.Figure()
@@ -242,12 +241,11 @@ def train_win_prediction_model(game_level_df):
     
     return model, features
 
-def create_improvement_chart(df, player_id, metric_to_plot='Overall_Performance'): # <-- MODIFIED: Added new argument
+def create_improvement_chart(df, player_id, metric_to_plot='Overall_Performance'):
     """Creates a line chart showing a player's performance over time with a trendline."""
     player_df = df[df['Player_ID'] == player_id].copy()
     
-    # Calculate average of the chosen metric per match
-    match_performance = player_df.groupby('Match_ID')[metric_to_plot].mean().reset_index() # <-- MODIFIED: Uses the new argument
+    match_performance = player_df.groupby('Match_ID')[metric_to_plot].mean().reset_index()
     
     # Ensure matches are sorted for a proper time-series plot
     match_performance = match_performance.sort_values('Match_ID')
@@ -256,24 +254,20 @@ def create_improvement_chart(df, player_id, metric_to_plot='Overall_Performance'
     if len(match_performance) < 2:
         return None 
 
-    # Create a numeric column for the x-axis to allow trendline calculation.
     match_performance['match_num'] = range(len(match_performance))
     
-    # Create a nicely formatted name for titles and labels
     metric_name_formatted = metric_to_plot.replace('_', ' ').title()
     
-    # Use the new numeric column for the 'x' axis and the chosen metric for 'y'.
     fig = px.scatter(
         match_performance,
         x='match_num',
-        y=metric_to_plot, # <-- MODIFIED: Uses the new argument
-        title=f'{player_id} - {metric_name_formatted} Trend Across Matches', # <-- MODIFIED: Dynamic title
-        labels={"match_num": "Match", metric_to_plot: f"Average {metric_name_formatted}"}, # <-- MODIFIED: Dynamic labels
+        y=metric_to_plot,
+        title=f'{player_id} - {metric_name_formatted} Trend Across Matches',
+        labels={"match_num": "Match", metric_to_plot: f"Average {metric_name_formatted}"},
         trendline="ols",
         trendline_color_override="red"
     )
     
-    # Update the x-axis tick labels to show the original string 'Match_ID's.
     fig.update_layout(
         xaxis = dict(
             tickmode = 'array',
@@ -282,7 +276,6 @@ def create_improvement_chart(df, player_id, metric_to_plot='Overall_Performance'
         )
     )
     
-    # Update the main trace to show lines connecting the markers
     fig.update_traces(mode='lines+markers')
     
     return fig
@@ -456,12 +449,12 @@ def generate_team_coaching_report(df, team_id):
     biggest_weakness = min(weaknesses, key=weaknesses.get)
     report = [f"### Coaching Focus for {team_id}", f"**Biggest Team Weakness**: The team's **{biggest_weakness}** is the furthest below the league average."]
     advice_map = {
-        'Hit_Accuracy': "🎯 **Team Focus**: Dedicate a session to throwing accuracy.",
-        'Defensive_Efficiency': "🙌 **Team Focus**: Run drills that simulate 2-on-1 situations.",
-        'Catches': "🛡️ **Team Focus**: Emphasize the value of catching.",
-        'Dodges': "🏃 **Team Focus**: A full-team agility session could be beneficial.",
-        'Overall_Performance': "📈 **Team Focus**: Go back to basics.",
-        'K/D_Ratio': "⚡ **Team Focus**: The team needs to improve its elimination efficiency."
+        'Hit_Accuracy': "Team Focus: Dedicate a session to throwing accuracy.",
+        'Defensive_Efficiency': "Team Focus: Run drills that simulate 2-on-1 situations.",
+        'Catches': "Team Focus: Emphasize the value of catching.",
+        'Dodges': "Team Focus: A full-team agility session could be beneficial.",
+        'Overall_Performance': "Team Focus: Revisit fundamentals.",
+        'K/D_Ratio': "Team Focus: Improve elimination efficiency."
     }
     report.append(advice_map.get(biggest_weakness, "Focus on improving this area through targeted drills."))
     
@@ -473,7 +466,7 @@ def generate_team_coaching_report(df, team_id):
 
 def generate_situational_insights(df):
     """
-    Generate more advanced, AI-powered insights from the detailed situational data.
+    Generate situational insights from the detailed data.
     """
     insights = []
     
@@ -490,20 +483,20 @@ def generate_situational_insights(df):
     max_spec_value = specialization.max().max()
     player_with_max_spec = specialization[max_spec_player].idxmax()
 
-    if max_spec_value > 2.5: # Only report if someone is > 2.5x league average
-        insights.append(f"👑 **Extreme Specialist:** **{player_with_max_spec}** is a standout specialist in **{max_spec_player.replace('_', ' ')}**, performing at **{max_spec_value:.1f}x** the league average in that specific situation.")
+    if max_spec_value > 2.5:
+        insights.append(f"**Extreme Specialist:** **{player_with_max_spec}** stands out in **{max_spec_player.replace('_', ' ')}**, performing at **{max_spec_value:.1f}x** the league average in that situation.")
 
     # Insight 2: Find players with the biggest performance gap
     df['offense_gap'] = df['Hits_Singles'] - df['Hits_Multi']
     df['defense_gap'] = df['Dodges_Singles'] - df['Dodges_Multi']
     
     biggest_offense_gap_player = df.loc[df['offense_gap'].idxmax()]
-    if biggest_offense_gap_player['offense_gap'] > 5: # If the gap is more than 5 hits
-        insights.append(f"🎯 **Singles Dominator:** **{biggest_offense_gap_player['Player_ID']}** is significantly more effective in single-ball situations, with **{biggest_offense_gap_player['offense_gap']:.0f}** more hits in Singles than Multi-ball.")
+    if biggest_offense_gap_player['offense_gap'] > 5:
+        insights.append(f"**Singles Specialist:** **{biggest_offense_gap_player['Player_ID']}** is notably more effective in single-ball situations, with **{biggest_offense_gap_player['offense_gap']:.0f}** more hits in Singles than Multi-ball.")
 
     biggest_defense_gap_player = df.loc[df['defense_gap'].idxmax()]
-    if biggest_defense_gap_player['defense_gap'] > 5: # If the gap is more than 5 dodges
-        insights.append(f"🏃 **Evasive Specialist:** **{biggest_defense_gap_player['Player_ID']}** relies heavily on dodging in single-ball situations, with **{biggest_defense_gap_player['defense_gap']:.0f}** more dodges in Singles than Multi-ball.")
+    if biggest_defense_gap_player['defense_gap'] > 5:
+        insights.append(f"**Evasive Specialist:** **{biggest_defense_gap_player['Player_ID']}** relies heavily on dodging in single-ball situations, with **{biggest_defense_gap_player['defense_gap']:.0f}** more dodges in Singles than Multi-ball.")
 
     # Insight 3: Team-level Tactical Insight
     team_counter_hits = df.groupby('Team')['Hits_Counters'].sum()
@@ -513,10 +506,10 @@ def generate_situational_insights(df):
     if not team_counter_ratio.empty:
         top_counter_team = team_counter_ratio.idxmax()
         top_ratio = team_counter_ratio.max()
-        if top_ratio > 0.4: # If more than 40% of hits are from counters
-            insights.append(f"💥 **Counter-Attack Kings:** **{top_counter_team}** excels at turning defense into offense. A massive **{top_ratio:.1%}** of their total hits come from counter-attacks.")
+        if top_ratio > 0.4:
+            insights.append(f"**Counter-Attack Team:** **{top_counter_team}** turns defense into offense effectively. **{top_ratio:.1%}** of their total hits come from counter-attacks.")
 
     if not insights:
-        insights.append("✅ **Balanced Dataset:** No extreme outliers or specialists were identified. The teams and players in this dataset show relatively balanced performance across different situations.")
+        insights.append("**Balanced Dataset:** No extreme outliers or specialists were identified. Teams and players appear relatively balanced across situations.")
 
     return insights

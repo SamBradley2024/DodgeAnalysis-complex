@@ -4,18 +4,16 @@ import plotly.express as px
 import plotly.graph_objects as go
 import utils
 
-# --- Page Configuration and State Check ---
-st.set_page_config(page_title="Team Analysis", page_icon="🏆", layout="wide")
+st.set_page_config(page_title="Team Analysis", layout="wide")
 st.markdown(utils.load_css(), unsafe_allow_html=True)
 
 if 'data_loaded' not in st.session_state or not st.session_state.data_loaded:
-    st.warning("Please select and load a data source from the 🏠 Home page first.")
+    st.warning("Please load a data source from the Home page first.")
     st.stop()
 
 df = st.session_state.df_enhanced
 
-# --- Team Selection ---
-st.header("🏆 Team Analysis")
+st.header("Team Analysis")
 team_list = sorted(df['Team'].unique())
 if not team_list:
     st.warning("No teams found in the selected data source.")

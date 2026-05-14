@@ -4,18 +4,16 @@ import plotly.graph_objects as go
 import plotly.express as px
 import utils
 
-# --- Page Configuration and State Check ---
-st.set_page_config(page_title="Player Analysis", page_icon="👤", layout="wide")
+st.set_page_config(page_title="Player Analysis", layout="wide")
 st.markdown(utils.load_css(), unsafe_allow_html=True)
 
 if 'data_loaded' not in st.session_state or not st.session_state.data_loaded:
-    st.warning("Please select and load a data source from the 🏠 Home page first.")
+    st.warning("Please load a data source from the Home page first.")
     st.stop()
 
 df = st.session_state.df_enhanced
 
-# --- Player Selection ---
-st.header("👤 Individual Player Analysis")
+st.header("Player Analysis")
 player_list = sorted(df['Player_ID'].unique())
 if not player_list:
     st.warning("No players found in the selected data source.")
